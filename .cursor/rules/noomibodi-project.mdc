@@ -1,0 +1,61 @@
+---
+description: NoomiBodi app architecture, conventions, and project context
+alwaysApply: true
+---
+
+# NoomiBodi Project Context
+
+AI-powered nutrition tracking app built with React Native (TypeScript), Supabase backend, and Claude API.
+
+## Architecture
+
+### Screens (src/screens/)
+- **ChatTabScreen** — horizontal pager wrapping QuickLogPage (page 1) and ChatScreen (page 2)
+- **QuickLogPage** — daily calories/macros, add meal photo, weight log, smart suggestions, today's meals
+- **ChatScreen** — conversational interface with Claude, quick action chips, markdown rendering
+- **MealsScreen** — saved meals library with search, sort, macro filters, AI meal builder
+- **ReportsTabScreen** — horizontal pager wrapping ReportsScreen and InsightsPage
+- **ProfileScreen** — user profile, goals, API key, theme settings
+- **AdminDashboard** — admin-only tab with AI usage analytics (conditionally shown)
+- **OnboardingScreen** — multi-step onboarding (sign-up, API key, profile, Claude plan)
+
+### Services (src/services/)
+- **claude.ts** — Anthropic Messages API integration, system prompts, response parsing, AI usage logging
+- **claudeTools.ts** — RAG tool definitions + execution for Claude function calling
+- **mealLog.ts** — daily_logs CRUD (Supabase + offline queue)
+- **savedMeals.ts** — saved_meals CRUD
+- **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans
+- **reportData.ts** — weight logs, daily summaries, overview stats
+- **adminAnalytics.ts** — admin dashboard data queries
+- **analytics.ts** — weight prediction, adherence patterns, correlations
+- **insightGenerator.ts** — AI-generated insights via Claude
+- **offlineStore.ts** — offline queue + read cache
+- **supabase.ts** — Supabase client initialization
+
+### Key Patterns
+- **Theming**: `useTheme()` hook from `ThemeContext` — apply colors via inline styles `{ color: colors.text }`, not in StyleSheet.create
+- **Auth**: `useAuth()` from `AuthContext` — wraps Supabase auth
+- **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop
+- **Reusable chat input**: `ChatInputBox` component with optional inline image attachment
+- **Offline**: writes queued locally via `offlineStore.ts`, synced on reconnect via `useOfflineSync` hook
+- **Day change**: `useDayChange` hook triggers refresh at midnight
+
+## Conventions
+
+- TypeScript strict, functional components only
+- Styles via `StyleSheet.create` at bottom of file; theme colors applied inline in JSX
+- `colors.surface` for card backgrounds, `colors.border` for card borders, `borderRadius: 14` for cards
+- 12px spacing between sibling components on QuickLogPage
+- All modals use `BottomSheet` wrapper (tap/drag dismiss, dark backdrop)
+- Claude responses parsed with markers: `[MEAL_DATA]`, `[PLAN_START]`, `[SAVE_MEAL]`, `[PORTION]`
+- AI usage logged to `ai_usage_logs` table after every Claude API call
+
+## Database (Supabase + RLS)
+Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`
+Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
+See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
+
+## Dependencies
+- react-native-image-picker, react-native-chart-kit, react-native-svg
+- react-native-markdown-display (chat), @react-native-community/netinfo (offline)
+- @supabase/supabase-js, axios, react-native-vector-icons/Ionicons

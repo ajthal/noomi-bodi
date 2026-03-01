@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# iOS build artifacts
+ios/Pods/
+ios/build/
+ios/DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Android build artifacts
+android/.gradle/
+android/app/build/
+android/build/
+
+# Metro / RN caches
+.metro-health-check*
+*.hbc
+*.jsbundle
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
