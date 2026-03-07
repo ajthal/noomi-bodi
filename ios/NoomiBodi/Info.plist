@@ -22,6 +22,29 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>org.reactjs.native.example.NoomiBodi</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>noomibodi</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLIconFile</key>
+			<string></string>
+			<key>CFBundleURLName</key>
+			<string>com.googleusercontent.apps.77646899335-nmq8dd3t1dm79p305mg52lhgqss49og8</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.77646899335-nmq8dd3t1dm79p305mg52lhgqss49og8</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -33,8 +56,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>NoomiBodi needs camera access so you can take photos of your meals for nutritional analysis.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NoomiBodi needs photo library access so you can share meal photos for nutritional analysis.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -54,22 +81,7 @@
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>NoomiBodi needs camera access so you can take photos of your meals for nutritional analysis.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>NoomiBodi needs photo library access so you can share meal photos for nutritional analysis.</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>noomibodi</string>
-			</array>
-			<key>CFBundleURLName</key>
-			<string>org.reactjs.native.example.NoomiBodi</string>
-		</dict>
-	</array>
 </dict>
 </plist>

@@ -258,3 +258,9 @@ export async function getCachedSavedMeals(): Promise<SavedMeal[] | null> {
     return null;
   }
 }
+
+export async function clearOfflineData(): Promise<void> {
+  await AsyncStorage.multiRemove([
+    QUEUE_KEY, CACHE_MEALS_KEY, CACHE_PROFILE_KEY, CACHE_SAVED_MEALS_KEY,
+  ]);
+}

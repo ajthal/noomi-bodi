@@ -5,6 +5,14 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
+# Xcode 26 uses object version 70 which xcodeproj doesn't recognize yet
+require 'xcodeproj'
+mod = Xcodeproj::Constants
+new_map = mod::COMPATIBILITY_VERSION_BY_OBJECT_VERSION.dup
+new_map[70] = 'Xcode 16.0'
+mod.send(:remove_const, :COMPATIBILITY_VERSION_BY_OBJECT_VERSION)
+mod.const_set(:COMPATIBILITY_VERSION_BY_OBJECT_VERSION, new_map)
+
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 

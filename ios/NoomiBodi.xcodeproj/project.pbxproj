@@ -65,7 +65,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		8149C4242F5385FF002F2677 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		8149C4242F5385FF002F2677 /* Exceptions for "NoomiBodi Widget" folder in "NoomiBodi WidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -75,7 +75,18 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		8149C4152F5385FE002F2677 /* NoomiBodi Widget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (8149C4242F5385FF002F2677 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "NoomiBodi Widget"; sourceTree = "<group>"; };
+		8149C4152F5385FE002F2677 /* NoomiBodi Widget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8149C4242F5385FF002F2677 /* Exceptions for "NoomiBodi Widget" folder in "NoomiBodi WidgetExtension" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "NoomiBodi Widget";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -210,8 +221,6 @@
 				8149C4152F5385FE002F2677 /* NoomiBodi Widget */,
 			);
 			name = "NoomiBodi WidgetExtension";
-			packageProductDependencies = (
-			);
 			productName = "NoomiBodi WidgetExtension";
 			productReference = 8149C4102F5385FD002F2677 /* NoomiBodi WidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -297,13 +306,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NoomiBodi/Pods-NoomiBodi-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NoomiBodi/Pods-NoomiBodi-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -340,13 +345,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NoomiBodi/Pods-NoomiBodi-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NoomiBodi/Pods-NoomiBodi-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

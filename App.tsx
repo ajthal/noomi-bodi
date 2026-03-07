@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
@@ -14,10 +15,16 @@ import ReportsTabScreen from './src/screens/ReportsTabScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import AdminDashboard from './src/screens/AdminDashboard';
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import SignInScreen from './src/screens/SignInScreen';
+import EmailVerificationScreen from './src/screens/EmailVerificationScreen';
 import { loadUserProfile, clearUserProfile, clearMessages } from './src/services/storage';
+import { clearAllSavedMeals } from './src/services/savedMeals';
+import { clearOfflineData } from './src/services/offlineStore';
 import { OnboardingContext } from './src/contexts/OnboardingContext';
 import { useOfflineSync } from './src/hooks/useOfflineSync';
 import { getUserRole, type UserRole } from './src/utils/roleCheck';
+
+const ONBOARDING_COMPLETE_KEY = '@noomibodi_onboarding_complete';
 
 const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
@@ -79,11 +86,13 @@ function OfflineBanner({ isOnline, pendingCount }: { isOnline: boolean; pendingC
   );
 }
 
+type AppScreen = 'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main';
+
 function AppInner() {
   const { isDark, colors } = useTheme();
   const { user, isLoading: isAuthLoading, signOut } = useAuth();
   const [initialCheckDone, setInitialCheckDone] = useState(false);
-  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [screen, setScreen] = useState<AppScreen>('loading');
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const { isOnline, pendingCount } = useOfflineSync();
 
@@ -97,7 +106,10 @@ function AppInner() {
     if (isAuthLoading || initialCheckDone) return;
 
     if (!user) {
-      setInitialCheckDone(true);
+      AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY).then(flag => {
+        setScreen(flag ? 'signIn' : 'onboarding');
+        setInitialCheckDone(true);
+      });
       return;
     }
 
@@ -106,39 +118,86 @@ function AppInner() {
       getUserRole(),
     ])
       .then(([profile, role]) => {
-        setIsOnboarded(!!profile);
+        if (profile) {
+          AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, '1');
+          if (user && !user.email_confirmed_at) {
+            setScreen('emailVerification');
+          } else {
+            setScreen('main');
+          }
+        } else {
+          setScreen('onboarding');
+        }
         setUserRole(role);
       })
-      .catch(() => setIsOnboarded(false))
+      .catch(() => setScreen('onboarding'))
       .finally(() => setInitialCheckDone(true));
   }, [isAuthLoading, user, initialCheckDone]);
 
   // React to sign-out after the initial check is done.
   useEffect(() => {
     if (!initialCheckDone || isAuthLoading) return;
-    if (!user) {
-      setIsOnboarded(false);
+    if (!user && (screen === 'main' || screen === 'emailVerification')) {
+      setScreen('signIn');
       setUserRole(null);
     }
-  }, [user, initialCheckDone, isAuthLoading]);
+  }, [user, initialCheckDone, isAuthLoading, screen]);
+
+  // Ensure role is fetched once user is authenticated and on the main screen.
+  useEffect(() => {
+    if (user && screen === 'main' && userRole === null) {
+      getUserRole().then(role => {
+        if (role) setUserRole(role);
+      });
+    }
+  }, [user, screen, userRole]);
 
   const handleOnboardingComplete = useCallback(() => {
-    setIsOnboarded(true);
+    AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, '1');
+    if (user && !user.email_confirmed_at) {
+      setScreen('emailVerification');
+    } else {
+      setScreen('main');
+    }
+  }, [user]);
+
+  const handleEmailVerified = useCallback(() => {
+    getUserRole().then(role => {
+      if (role) setUserRole(role);
+    });
+    setScreen('main');
   }, []);
 
+  const handleSignedIn = useCallback(() => {
+    Promise.all([loadUserProfile(), getUserRole()])
+      .then(([profile, role]) => {
+        setUserRole(role);
+        if (!profile) {
+          setScreen('onboarding');
+        } else if (user && !user.email_confirmed_at) {
+          setScreen('emailVerification');
+        } else {
+          setScreen('main');
+        }
+      })
+      .catch(() => setScreen('onboarding'));
+  }, [user]);
+
   const onResetProfile = useCallback(async () => {
+    await clearAllSavedMeals();
     await clearUserProfile();
     await clearMessages();
+    await clearOfflineData();
+    await AsyncStorage.removeItem(ONBOARDING_COMPLETE_KEY);
     await signOut();
+    setScreen('onboarding');
   }, [signOut]);
-
-  const isLoading = isAuthLoading || !initialCheckDone;
 
   const navTheme = isDark
     ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: colors.background, card: colors.background } }
     : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.background, card: colors.background } };
 
-  if (isLoading) {
+  if (screen === 'loading' || isAuthLoading || !initialCheckDone) {
     return (
       <NavigationContainer theme={navTheme}>
         <SafeAreaView style={[styles.loadingContainer, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
@@ -157,11 +216,22 @@ function AppInner() {
         <StatusBar barStyle={colors.statusBar} />
         <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} />
         <RootStack.Navigator screenOptions={{ headerShown: false }}>
-          {isOnboarded ? (
+          {screen === 'main' && (
             <RootStack.Screen name="MainTabs">
               {() => <MainTabs showAdmin={userRole === 'admin'} />}
             </RootStack.Screen>
-          ) : (
+          )}
+          {screen === 'emailVerification' && (
+            <RootStack.Screen name="EmailVerification">
+              {() => <EmailVerificationScreen onVerified={handleEmailVerified} />}
+            </RootStack.Screen>
+          )}
+          {screen === 'signIn' && (
+            <RootStack.Screen name="SignIn">
+              {() => <SignInScreen onSignedIn={handleSignedIn} />}
+            </RootStack.Screen>
+          )}
+          {screen === 'onboarding' && (
             <RootStack.Screen name="Onboarding">
               {() => <OnboardingScreen onComplete={handleOnboardingComplete} />}
             </RootStack.Screen>

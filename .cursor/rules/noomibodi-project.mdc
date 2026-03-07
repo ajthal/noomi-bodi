@@ -17,24 +17,49 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **ReportsTabScreen** — horizontal pager wrapping ReportsScreen and InsightsPage
 - **ProfileScreen** — user profile, goals, API key, theme settings
 - **AdminDashboard** — admin-only tab with AI usage analytics (conditionally shown)
-- **OnboardingScreen** — multi-step onboarding (sign-up, API key, profile, Claude plan)
+- **OnboardingScreen** — multi-step onboarding (API key, profile info, goals, activity, account, details, Claude plan); styles in separate `OnboardingScreen.styles.tsx` using `createStyles(colors, isDark)` pattern
+- **SignInScreen** — standalone sign-in screen shown after sign-out (without profile reset); supports email/password, Apple, and Google sign-in
+- **EmailVerificationScreen** — blocks entry to main app until email is verified; polls session every 5s, has resend with 60s cooldown; skipped for social sign-ins (Google/Apple)
 
 ### Services (src/services/)
 - **claude.ts** — Anthropic Messages API integration, system prompts, response parsing, AI usage logging
 - **claudeTools.ts** — RAG tool definitions + execution for Claude function calling
 - **mealLog.ts** — daily_logs CRUD (Supabase + offline queue)
-- **savedMeals.ts** — saved_meals CRUD
-- **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans
+- **savedMeals.ts** — saved_meals CRUD + `clearAllSavedMeals()` for profile reset
+- **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans; `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights
 - **reportData.ts** — weight logs, daily summaries, overview stats
 - **adminAnalytics.ts** — admin dashboard data queries
 - **analytics.ts** — weight prediction, adherence patterns, correlations
 - **insightGenerator.ts** — AI-generated insights via Claude
-- **offlineStore.ts** — offline queue + read cache
+- **offlineStore.ts** — offline queue + read cache + `clearOfflineData()` for profile reset
 - **supabase.ts** — Supabase client initialization
+- **widgetBridge.ts** — native bridge to write widget data to App Group UserDefaults and reload WidgetKit timelines via `SharedGroupPreferences`
+- **widgetDataSync.ts** — aggregates today's calories/macros from `daily_logs` and goals from `user_plans`, then calls `updateWidgetData()` to push to the widget
+
+### iOS Widgets (ios/NoomiBodi Widget/)
+Native WidgetKit extension written in Swift. Shares data with the main app via App Group `group.noomibodi` using `UserDefaults(suiteName:)` with key `widgetData` (JSON string).
+
+**Widget types:**
+- **Home screen small** (`systemSmall`) — calorie ring + consumed/goal text
+- **Home screen medium** (`systemMedium`) — calorie ring with "+" button + protein/carbs/fat rows
+- **Lock screen circular** (`accessoryCircular`) — calorie ring with remaining calories
+- **Lock screen rectangular** (`accessoryRectangular`) — calories + protein/carbs/fat gauges
+- **Control Center** — timer toggle (placeholder, not wired to nutrition data)
+- **Live Activity** — Dynamic Island placeholder (not yet integrated)
+
+**Data flow:** Meal logged → Supabase `daily_logs` → `syncWidgetData()` fetches today's totals + goals → `updateWidgetData()` writes JSON to App Group UserDefaults → `reloadWidgets()` triggers `WidgetCenter.shared.reloadAllTimelines()` → widget reads `widgetData` and refreshes.
+
+**Sync call sites:** QuickLogPage (after meal log, weight log, offline sync), ChatScreen (after send/AI response), MealsScreen (after save), SmartRecommendations (after suggested meal log), offlineStore (after offline sync).
+
+**Native bridge files:** `ios/SharedGroupPreferences.h` + `.m` (Obj-C React Native module exposing `set(suiteName, key, value)` and `reloadWidgets()`).
 
 ### Key Patterns
-- **Theming**: `useTheme()` hook from `ThemeContext` — apply colors via inline styles `{ color: colors.text }`, not in StyleSheet.create
-- **Auth**: `useAuth()` from `AuthContext` — wraps Supabase auth
+- **Theming**: `useTheme()` hook from `ThemeContext` — apply colors via inline styles `{ color: colors.text }`, not in StyleSheet.create. For screens with separate style files (OnboardingScreen), use `createStyles(colors, isDark)` function pattern with `useMemo`.
+- **Auth**: `useAuth()` from `AuthContext` — wraps Supabase auth; provides `signIn`, `signUp`, `signInWithApple`, `signInWithGoogle`, `signOut`, `resetPassword`, `resendVerificationEmail`, `refreshSession`
+- **Social Auth**: Apple Sign-In via `@invertase/react-native-apple-authentication`; Google Sign-In via `@react-native-google-signin/google-signin` (patched native iOS code via `patch-package` to support nonce parameter); Google flow requires SHA256 hashed nonce to Google + raw nonce to Supabase `signInWithIdToken`
+- **Identity Linking**: Supabase automatic linking is enabled by default — same email across Google, Apple, and email/password maps to one account
+- **Email Verification**: After email/password sign-up, user completes onboarding but is blocked from the main app by `EmailVerificationScreen` until `email_confirmed_at` is set; social sign-ins skip this
+- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`
 - **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop
 - **Reusable chat input**: `ChatInputBox` component with optional inline image attachment
 - **Offline**: writes queued locally via `offlineStore.ts`, synced on reconnect via `useOfflineSync` hook
@@ -44,11 +69,15 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 
 - TypeScript strict, functional components only
 - Styles via `StyleSheet.create` at bottom of file; theme colors applied inline in JSX
+- For screens with separate style files, use `createStyles(colors: ThemeColors, isDark: boolean)` function that returns `StyleSheet.create({...})`, consumed via `useMemo` in the component
 - `colors.surface` for card backgrounds, `colors.border` for card borders, `borderRadius: 14` for cards
 - 12px spacing between sibling components on QuickLogPage
 - All modals use `BottomSheet` wrapper (tap/drag dismiss, dark backdrop)
 - Claude responses parsed with markers: `[MEAL_DATA]`, `[PLAN_START]`, `[SAVE_MEAL]`, `[PORTION]`
 - AI usage logged to `ai_usage_logs` table after every Claude API call
+- Onboarding and auth screens always follow system theme (ThemeProvider defaults to `mode: 'system'`)
+- Primary buttons invert in dark mode: white bg with dark text (light mode: dark bg with white text)
+- Apple Sign-In button inverts in dark mode (white bg/dark text); Google button stays blue in both themes
 
 ## Database (Supabase + RLS)
 Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`
@@ -57,5 +86,9 @@ See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
 
 ## Dependencies
 - react-native-image-picker, react-native-chart-kit, react-native-svg
-- react-native-markdown-display (chat), @react-native-community/netinfo (offline)
+- react-native-markdown-display (chat + onboarding plan), @react-native-community/netinfo (offline)
 - @supabase/supabase-js, axios, react-native-vector-icons/Ionicons
+- @invertase/react-native-apple-authentication (Apple Sign-In)
+- @react-native-google-signin/google-signin (Google Sign-In, patched via patch-package for iOS nonce support)
+- js-sha256 (nonce hashing for Google Sign-In)
+- patch-package (postinstall script applies native iOS patches)

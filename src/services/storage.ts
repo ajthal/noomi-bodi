@@ -276,6 +276,8 @@ export async function clearUserProfile(): Promise<void> {
   try {
     await supabase.from('user_plans').delete().eq('user_id', userId);
     await supabase.from('daily_logs').delete().eq('user_id', userId);
+    await supabase.from('weight_logs').delete().eq('user_id', userId);
+    await supabase.from('user_insights').delete().eq('user_id', userId);
     await supabase.from('profiles').delete().eq('id', userId);
   } catch (error) {
     console.error('Error clearing user profile:', error);

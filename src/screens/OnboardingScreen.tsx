@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,19 +16,20 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import {
   ActivityLevel,
   Goal,
   Gender,
   UserProfile,
   saveUserProfile,
-  loadUserProfile,
   getApiKey,
   saveApiKey,
 } from '../services/storage';
 import { generatePlanWithClaude } from '../services/claude';
 import { feetInchesToCm, lbsToKg } from '../utils/units';
-import { styles } from './OnboardingScreen.styles.tsx';
+import Markdown from 'react-native-markdown-display';
+import { createStyles } from './OnboardingScreen.styles.tsx';
 
 interface OnboardingScreenProps {
   onComplete: () => void;
@@ -136,11 +137,27 @@ const generateBasicPlan = (profile: UserProfile): string => {
 };
 
 const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
-  const { signUp, signIn, user } = useAuth();
+  const { signUp, signIn, signInWithApple, signInWithGoogle, resetPassword, user } = useAuth();
+  const { colors, isDark } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors, isDark), [colors, isDark]);
+  const markdownStyles = React.useMemo(() => ({
+    body: { fontSize: 14, color: colors.text, lineHeight: 22 },
+    heading1: { fontSize: 18, fontWeight: '700' as const, color: colors.text, marginBottom: 8 },
+    heading2: { fontSize: 16, fontWeight: '600' as const, color: colors.text, marginBottom: 6 },
+    heading3: { fontSize: 15, fontWeight: '600' as const, color: colors.textSecondary, marginBottom: 4 },
+    bullet_list: { marginVertical: 4 },
+    ordered_list: { marginVertical: 4 },
+    list_item: { marginVertical: 2 },
+    strong: { fontWeight: '600' as const },
+    paragraph: { marginVertical: 4 },
+  }), [colors]);
   const [step, setStep] = useState<Step>(1);
 
   // Step 1: API key
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [hasExistingKey, setHasExistingKey] = useState(false);
+  const [isEditingKey, setIsEditingKey] = useState(false);
+  const [maskedKey, setMaskedKey] = useState('');
 
   // Step 2: Basic info
   const [gender, setGender] = useState<Gender>('male');
@@ -169,6 +186,51 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [planText, setPlanText] = useState<string | null>(null);
 
+  useEffect(() => {
+    getApiKey().then(key => {
+      if (key) {
+        setHasExistingKey(true);
+        const last4 = key.slice(-4);
+        setMaskedKey(`sk-ant-...${last4}`);
+      }
+    });
+  }, []);
+
+  const handleSocialSignIn = async (provider: 'apple' | 'google') => {
+    setAuthLoading(true);
+    try {
+      const signInFn = provider === 'apple' ? signInWithApple : signInWithGoogle;
+      const { error, cancelled } = await signInFn();
+      if (cancelled) return;
+      if (error) {
+        Alert.alert('Sign in failed', error);
+        return;
+      }
+      await advanceAfterAuth();
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      Alert.alert('Enter your email', 'Please enter your email address first.');
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const { error } = await resetPassword(trimmedEmail);
+      if (error) {
+        Alert.alert('Reset failed', error);
+      } else {
+        Alert.alert('Check your email', 'We sent a password reset link to your email.');
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const advanceAfterAuth = async () => {
     const hasKey = apiKeyInput.trim().length > 0 || !!(await getApiKey());
     if (hasKey) {
@@ -180,10 +242,12 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
 
   const goNext = async () => {
     if (step === 1) {
-      // API Key
-      const trimmedKey = apiKeyInput.trim();
-      if (trimmedKey) {
-        await saveApiKey(trimmedKey);
+      if (isEditingKey || !hasExistingKey) {
+        const trimmedKey = apiKeyInput.trim();
+        if (trimmedKey) {
+          await saveApiKey(trimmedKey);
+          setHasExistingKey(true);
+        }
       }
       setStep(2);
     } else if (step === 2) {
@@ -250,11 +314,6 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
           const { error } = await signIn(trimmedEmail, trimmedPassword);
           if (error) {
             Alert.alert('Sign in failed', error);
-            return;
-          }
-          const profile = await loadUserProfile();
-          if (profile) {
-            onComplete();
             return;
           }
         } else {
@@ -410,58 +469,84 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   const renderStepContent = () => {
     // Step 1: API key
     if (step === 1) {
+      const showConnected = hasExistingKey && !isEditingKey;
+
       return (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Connect to Claude AI</Text>
           <Text style={styles.cardSubtitle}>
-            NoomiBodi uses Claude to analyse meal photos and create personalised plans.
-            You'll need an API key from Anthropic.
+            {showConnected
+              ? 'Your API key is already connected. You can continue or update it below.'
+              : "NoomiBodi uses Claude to analyse meal photos and create personalised plans. You'll need an API key from Anthropic."}
           </Text>
 
-          <View style={styles.instructionBox}>
-            <Text style={styles.instructionTitle}>How to get your API key</Text>
-            <View style={styles.instructionStep}>
-              <Text style={styles.instructionNumber}>1</Text>
-              <Text style={styles.instructionText}>
-                Visit{' '}
-                <Text
-                  style={styles.link}
-                  onPress={() => Linking.openURL('https://console.anthropic.com')}
-                >
-                  console.anthropic.com
-                </Text>
+          {showConnected ? (
+            <>
+              <View style={styles.connectedBanner}>
+                <Ionicons name="checkmark-circle" size={22} color="#10b981" />
+                <Text style={styles.connectedBannerText}>API key connected</Text>
+              </View>
+
+              <View style={styles.maskedKeyContainer}>
+                <Text style={styles.maskedKeyText}>{maskedKey}</Text>
+                <Ionicons name="lock-closed-outline" size={16} color={colors.textTertiary} />
+              </View>
+
+              <Pressable
+                style={styles.changeKeyButton}
+                onPress={() => setIsEditingKey(true)}
+              >
+                <Text style={styles.changeKeyText}>Change key</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <View style={styles.instructionBox}>
+                <Text style={styles.instructionTitle}>How to get your API key</Text>
+                <View style={styles.instructionStep}>
+                  <Text style={styles.instructionNumber}>1</Text>
+                  <Text style={styles.instructionText}>
+                    Visit{' '}
+                    <Text
+                      style={styles.link}
+                      onPress={() => Linking.openURL('https://console.anthropic.com')}
+                    >
+                      console.anthropic.com
+                    </Text>
+                  </Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <Text style={styles.instructionNumber}>2</Text>
+                  <Text style={styles.instructionText}>Create an account or sign in</Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <Text style={styles.instructionNumber}>3</Text>
+                  <Text style={styles.instructionText}>Navigate to Settings → API Keys</Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <Text style={styles.instructionNumber}>4</Text>
+                  <Text style={styles.instructionText}>Create a new key and paste it below</Text>
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>API Key</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="sk-ant-api03-..."
+                placeholderTextColor={colors.textTertiary}
+                value={apiKeyInput}
+                onChangeText={setApiKeyInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.apiKeyHint}>
+                {apiKeyInput.trim()
+                  ? 'Your key will be saved securely on this device.'
+                  : "You can skip this step, but meal photo analysis and AI plans won't be available until you add a key in the Profile tab."}
               </Text>
-            </View>
-            <View style={styles.instructionStep}>
-              <Text style={styles.instructionNumber}>2</Text>
-              <Text style={styles.instructionText}>Create an account or sign in</Text>
-            </View>
-            <View style={styles.instructionStep}>
-              <Text style={styles.instructionNumber}>3</Text>
-              <Text style={styles.instructionText}>Navigate to Settings → API Keys</Text>
-            </View>
-            <View style={styles.instructionStep}>
-              <Text style={styles.instructionNumber}>4</Text>
-              <Text style={styles.instructionText}>Create a new key and paste it below</Text>
-            </View>
-          </View>
-
-          <Text style={styles.fieldLabel}>API Key</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="sk-ant-api03-..."
-            placeholderTextColor="#9ca3af"
-            value={apiKeyInput}
-            onChangeText={setApiKeyInput}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          <Text style={styles.apiKeyHint}>
-            {apiKeyInput.trim()
-              ? 'Your key will be saved securely on this device.'
-              : "You can skip this step, but meal photo analysis and AI plans won't be available until you add a key in the Profile tab."}
-          </Text>
+            </>
+          )}
         </View>
       );
     }
@@ -623,7 +708,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       );
     }
 
-    // Step 5: Account (email auth)
+    // Step 5: Account (email + social auth)
     if (step === 5) {
       return (
         <View style={styles.card}>
@@ -636,11 +721,37 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
               : 'Create an account to save your data in the cloud.'}
           </Text>
 
+          {Platform.OS === 'ios' && (
+            <Pressable
+              style={[styles.socialButton, styles.appleButton]}
+              onPress={() => handleSocialSignIn('apple')}
+              disabled={authLoading}
+            >
+              <Ionicons name="logo-apple" size={20} color={isDark ? '#000000' : '#ffffff'} />
+              <Text style={styles.appleButtonText}>Continue with Apple</Text>
+            </Pressable>
+          )}
+
+          <Pressable
+            style={[styles.socialButton, styles.googleButton]}
+            onPress={() => handleSocialSignIn('google')}
+            disabled={authLoading}
+          >
+            <Ionicons name="logo-google" size={18} color="#ffffff" />
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          </Pressable>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
           <Text style={styles.fieldLabel}>Email</Text>
           <TextInput
             style={styles.input}
             placeholder="you@example.com"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors.textTertiary}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -654,13 +765,23 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
           <TextInput
             style={styles.input}
             placeholder="At least 6 characters"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors.textTertiary}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
             textContentType={isSignInMode ? 'password' : 'newPassword'}
             editable={!authLoading}
           />
+
+          {isSignInMode && (
+            <Pressable
+              onPress={handleForgotPassword}
+              disabled={authLoading}
+              style={styles.forgotPassword}
+            >
+              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+            </Pressable>
+          )}
 
           <Pressable
             onPress={() => setIsSignInMode(prev => !prev)}
@@ -708,14 +829,18 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
 
         {isGenerating && (
           <View style={styles.generatingContainer}>
-            <ActivityIndicator size="large" color="#111827" />
+            <ActivityIndicator size="large" color={colors.text} />
             <Text style={styles.generatingText}>Creating your plan…</Text>
           </View>
         )}
 
         {!isGenerating && planText && (
-          <ScrollView style={styles.planScroll} contentContainerStyle={styles.planContent}>
-            <Text style={styles.planText}>{planText}</Text>
+          <ScrollView
+            style={styles.planScroll}
+            contentContainerStyle={styles.planContent}
+            nestedScrollEnabled
+          >
+            <Markdown style={markdownStyles}>{planText}</Markdown>
           </ScrollView>
         )}
       </View>
@@ -725,7 +850,10 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   // ── Button labels ───────────────────────────────────────────────
 
   const renderPrimaryButtonLabel = () => {
-    if (step === 1) return apiKeyInput.trim() ? 'Save & Continue' : 'Skip for Now';
+    if (step === 1) {
+      if (hasExistingKey && !isEditingKey) return 'Continue';
+      return apiKeyInput.trim() ? 'Save & Continue' : 'Skip for Now';
+    }
     if (step === 5) return isSignInMode ? 'Sign In' : 'Sign Up';
     if (step === 6) return 'Generate my plan';
     if (step === 7) return 'Start using NoomiBodi';
@@ -748,6 +876,86 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
 
   // ── Render ──────────────────────────────────────────────────────
 
+  const renderHeader = () => (
+    <>
+      <Text style={styles.title}>Welcome to NoomiBodi</Text>
+      <Text style={styles.subtitle}>
+        Answer a few quick questions so we can tailor things to you.
+      </Text>
+      {renderStepIndicator()}
+    </>
+  );
+
+  const renderFooter = () => (
+    <View style={styles.footer}>
+      {step === 7 ? (
+        <Pressable
+          style={[
+            styles.primaryButton,
+            styles.primaryButtonFull,
+            isPrimaryDisabled() && styles.primaryButtonDisabled,
+          ]}
+          disabled={isPrimaryDisabled()}
+          onPress={handlePrimaryAction}
+        >
+          <Text style={styles.primaryButtonText}>{renderPrimaryButtonLabel()}</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.footerButtons}>
+          <Pressable
+            style={[
+              styles.secondaryButton,
+              (step === 1 || isGenerating || authLoading) && styles.secondaryButtonDisabled,
+            ]}
+            disabled={step === 1 || isGenerating || authLoading}
+            onPress={goBack}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                (step === 1 || isGenerating || authLoading) &&
+                  styles.secondaryButtonTextDisabled,
+              ]}
+            >
+              Back
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.primaryButton,
+              isPrimaryDisabled() && styles.primaryButtonDisabled,
+            ]}
+            disabled={isPrimaryDisabled()}
+            onPress={handlePrimaryAction}
+          >
+            {(step === 5 && authLoading) ? (
+              <ActivityIndicator size="small" color={isDark ? '#121212' : '#ffffff'} />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                {renderPrimaryButtonLabel()}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+
+  if (step === 7) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          {renderHeader()}
+          <View style={styles.content}>
+            {renderStepContent()}
+          </View>
+          {renderFooter()}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -756,13 +964,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.container}>
-            <Text style={styles.title}>Welcome to NoomiBodi</Text>
-            <Text style={styles.subtitle}>
-              Answer a few quick questions so we can tailor things to you.
-            </Text>
-
-            {renderStepIndicator()}
-
+            {renderHeader()}
             <ScrollView
               style={styles.content}
               contentContainerStyle={{flexGrow: 1}}
@@ -771,60 +973,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
             >
               {renderStepContent()}
             </ScrollView>
-
-        <View style={styles.footer}>
-          {step === 7 ? (
-            <Pressable
-              style={[
-                styles.primaryButton,
-                styles.primaryButtonFull,
-                isPrimaryDisabled() && styles.primaryButtonDisabled,
-              ]}
-              disabled={isPrimaryDisabled()}
-              onPress={handlePrimaryAction}
-            >
-              <Text style={styles.primaryButtonText}>{renderPrimaryButtonLabel()}</Text>
-            </Pressable>
-          ) : (
-            <View style={styles.footerButtons}>
-              <Pressable
-                style={[
-                  styles.secondaryButton,
-                  (step === 1 || isGenerating || authLoading) && styles.secondaryButtonDisabled,
-                ]}
-                disabled={step === 1 || isGenerating || authLoading}
-                onPress={goBack}
-              >
-                <Text
-                  style={[
-                    styles.secondaryButtonText,
-                    (step === 1 || isGenerating || authLoading) &&
-                      styles.secondaryButtonTextDisabled,
-                  ]}
-                >
-                  Back
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[
-                  styles.primaryButton,
-                  isPrimaryDisabled() && styles.primaryButtonDisabled,
-                ]}
-                disabled={isPrimaryDisabled()}
-                onPress={handlePrimaryAction}
-              >
-                {(step === 5 && authLoading) ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>
-                    {renderPrimaryButtonLabel()}
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          )}
-        </View>
+            {renderFooter()}
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
