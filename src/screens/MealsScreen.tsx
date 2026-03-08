@@ -27,6 +27,8 @@ import {
 import { logMeal } from '../services/mealLog';
 import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
+import { shareMealWithMultiple } from '../services/sharedMeals';
+import FriendPickerModal from '../components/FriendPickerModal';
 
 const SORT_OPTIONS = [
   { key: 'name', label: 'Name', color: '#607D8B' },
@@ -60,6 +62,8 @@ export default function MealsScreen(): React.JSX.Element {
     carbs: { min: '', max: '' },
     fat: { min: '', max: '' },
   });
+  const [friendPickerVisible, setFriendPickerVisible] = useState(false);
+  const [sharingMealId, setSharingMealId] = useState<string | null>(null);
   const isFocused = useIsFocused();
 
   const hasActiveFilters = useMemo(
@@ -236,9 +240,26 @@ export default function MealsScreen(): React.JSX.Element {
   const handleLongPress = (meal: SavedMeal) => {
     Alert.alert(meal.name, 'What would you like to do?', [
       { text: 'Cancel', style: 'cancel' },
+      { text: 'Share with Friend', onPress: () => {
+        setSharingMealId(meal.id);
+        setFriendPickerVisible(true);
+      }},
       { text: 'Edit', onPress: () => handleEdit(meal) },
       { text: 'Delete', style: 'destructive', onPress: () => handleDelete(meal) },
     ]);
+  };
+
+  const handleShareSend = async (selectedIds: string[], message: string) => {
+    if (!sharingMealId) return;
+    try {
+      await shareMealWithMultiple(sharingMealId, selectedIds, message);
+      setFriendPickerVisible(false);
+      setSharingMealId(null);
+      Alert.alert('Shared', `Meal shared with ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}.`);
+    } catch (error) {
+      console.error('Failed to share meal:', error);
+      Alert.alert('Error', 'Failed to share meal. Try again.');
+    }
   };
 
   // ── Render ────────────────────────────────────────────────────────
@@ -489,6 +510,12 @@ export default function MealsScreen(): React.JSX.Element {
         visible={aiBuilderVisible}
         onGenerated={handleAIGenerated}
         onCancel={() => setAiBuilderVisible(false)}
+      />
+
+      <FriendPickerModal
+        visible={friendPickerVisible}
+        onClose={() => { setFriendPickerVisible(false); setSharingMealId(null); }}
+        onSend={handleShareSend}
       />
     </SafeAreaView>
   );

@@ -57,6 +57,7 @@ import { useDayChange } from '../hooks/useDayChange';
 import { useDeepLink } from '../hooks/useDeepLink';
 import { useTheme } from '../contexts/ThemeContext';
 import SmartRecommendations from '../components/SmartRecommendations';
+import ThemedMarkdown from '../components/ThemedMarkdown';
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -414,12 +415,9 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
                 activeOpacity={0.7}
                 onPress={() => setDescExpanded(prev => !prev)}
               >
-                <Text
-                  style={[s.resultDescription, { color: colors.textSecondary }]}
-                  numberOfLines={descExpanded ? undefined : 3}
-                >
-                  {pendingResult.description}
-                </Text>
+                <View style={descExpanded ? undefined : s.descCollapsed}>
+                  <ThemedMarkdown fontSize={14} lineHeight={20}>{pendingResult.description}</ThemedMarkdown>
+                </View>
                 <Text style={s.showMoreText}>
                   {descExpanded ? 'Show less' : 'Show more'}
                 </Text>
@@ -664,6 +662,10 @@ const s = StyleSheet.create({
     fontSize: 13,
     marginTop: 10,
     lineHeight: 18,
+  },
+  descCollapsed: {
+    maxHeight: 65,
+    overflow: 'hidden',
   },
   showMoreText: {
     fontSize: 12,

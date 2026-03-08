@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -13,8 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import Markdown from 'react-native-markdown-display';
 import ChatInputBox, { type PendingImage } from '../components/ChatInputBox';
+import ThemedMarkdown from '../components/ThemedMarkdown';
 import { styles } from './ChatScreen.styles';
 import EditMealModal from '../components/EditMealModal';
 import {
@@ -127,42 +127,7 @@ export default function ChatScreen({
 }: ChatScreenProps): React.JSX.Element {
   const { colors } = useTheme();
 
-  const mdStyles = useMemo(() => ({
-    body: { color: colors.text, fontSize: 15, lineHeight: 21 },
-    paragraph: { marginTop: 0, marginBottom: 6 },
-    strong: { fontWeight: '700' as const },
-    em: { fontStyle: 'italic' as const },
-    bullet_list: { marginVertical: 4 },
-    ordered_list: { marginVertical: 4 },
-    list_item: { marginVertical: 1 },
-    heading1: { fontSize: 20, fontWeight: '700' as const, color: colors.text, marginVertical: 6 },
-    heading2: { fontSize: 18, fontWeight: '700' as const, color: colors.text, marginVertical: 5 },
-    heading3: { fontSize: 16, fontWeight: '600' as const, color: colors.text, marginVertical: 4 },
-    code_inline: {
-      backgroundColor: colors.card,
-      color: colors.text,
-      fontSize: 13,
-      paddingHorizontal: 4,
-      borderRadius: 3,
-    },
-    fence: {
-      backgroundColor: colors.card,
-      color: colors.text,
-      fontSize: 13,
-      padding: 8,
-      borderRadius: 6,
-      marginVertical: 6,
-    },
-    blockquote: {
-      borderLeftWidth: 3,
-      borderLeftColor: colors.accent,
-      paddingLeft: 10,
-      marginVertical: 6,
-      opacity: 0.85,
-    },
-    hr: { backgroundColor: colors.borderLight, height: 1, marginVertical: 8 },
-    link: { color: colors.accent },
-  }), [colors]);
+
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -494,7 +459,7 @@ export default function ChatScreen({
                 <Image source={{ uri: msg.imageUri }} style={styles.messageImage} resizeMode="cover" />
               )}
               {msg.role === 'assistant' ? (
-                <Markdown style={mdStyles}>{msg.text}</Markdown>
+                <ThemedMarkdown>{msg.text}</ThemedMarkdown>
               ) : (
                 <Text style={[styles.message, { color: colors.text }]}>{msg.text}</Text>
               )}

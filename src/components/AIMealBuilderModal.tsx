@@ -11,6 +11,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import BottomSheet from './BottomSheet';
 import ChatInputBox, { type PendingImage } from './ChatInputBox';
+import ThemedMarkdown from './ThemedMarkdown';
 import {
   sendMessageToClaude,
   buildChatSystemPrompt,
@@ -223,7 +224,9 @@ export default function AIMealBuilderModal({ visible, onGenerated, onCancel }: P
                 <MacroPill label="F" value={result.mealData.fat} unit="g" color="#9C27B0" labelColor={colors.textSecondary} />
               </View>
               {result.recipe ? (
-                <Text style={[s.recipeText, { color: colors.textSecondary }]}>{result.recipe}</Text>
+                <View style={s.recipeWrap}>
+                  <ThemedMarkdown fontSize={14} lineHeight={20}>{result.recipe}</ThemedMarkdown>
+                </View>
               ) : null}
             </View>
 
@@ -337,9 +340,7 @@ const s = StyleSheet.create({
     fontSize: 10,
     marginTop: 1,
   },
-  recipeText: {
-    fontSize: 14,
-    lineHeight: 20,
+  recipeWrap: {
     marginTop: 12,
   },
   resultActions: {

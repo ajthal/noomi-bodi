@@ -1,13 +1,13 @@
 # NoomiBodi Database Schema
 
 **Database:** PostgreSQL (Supabase)  
-**Last Updated:** February 2026
+**Last Updated:** March 2026
 
 ---
 
 ## Overview
 
-The database uses Row Level Security (RLS) to ensure users can only access their own data. All tables reference `auth.users` from Supabase's built-in authentication system.
+The database uses Row Level Security (RLS) to ensure users can only access their own data. All tables reference `auth.users` from Supabase's built-in authentication system. Social features (friendships, activity feed, shared meals) use more complex RLS policies with cross-table checks for privacy and friendship status.
 
 ---
 
@@ -20,6 +20,11 @@ Extended user profile information beyond basic authentication.
 **Columns:**
 - `id` (UUID, Primary Key) - References `auth.users.id`
 - `email` (TEXT) - User's email address
+- `username` (TEXT, UNIQUE) - User's unique handle (e.g., "@sarah")
+- `display_name` (TEXT) - Optional friendly name
+- `profile_picture_url` (TEXT) - URL to profile image in Supabase Storage
+- `bio` (TEXT) - Optional user bio (max 150 chars in UI)
+- `is_private` (BOOLEAN, Default: false) - Privacy toggle for social features
 - `gender` (TEXT) - User's gender
 - `age` (INTEGER) - User's age in years
 - `height_cm` (DECIMAL) - Height in centimeters
@@ -32,11 +37,15 @@ Extended user profile information beyond basic authentication.
 
 **Indexes:**
 - Primary key on `id`
+- `profiles_username_idx` on `username` (for fast user search)
 
 **RLS Policies:**
 - Users can view own profile
+- Admins can see all profiles (via `is_admin()` SECURITY DEFINER function)
 - Users can update own profile
 - Users can insert own profile
+
+**Note:** Sensitive columns (`email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`) are only accessible to the owning user or admins. Social features use the `public_profiles` view (see Views section) for cross-user lookups.
 
 ---
 
@@ -89,6 +98,7 @@ User's personal library of frequently eaten meals for quick logging.
 
 **RLS Policies:**
 - Users can view own saved meals
+- Users can view meals shared with them (via subquery on `shared_meals`)
 - Users can insert own saved meals
 - Users can update own saved meals
 - Users can delete own saved meals
@@ -276,17 +286,177 @@ ORDER BY date;
 
 ---
 
+### 8. `friendships`
+
+Bidirectional friend system. Both users must accept for friendship to be active (status = 'accepted').
+
+**Columns:**
+- `id` (UUID, Primary Key) - Unique friendship identifier
+- `follower_id` (UUID, Foreign Key → `auth.users.id`) - User who sent the request
+- `following_id` (UUID, Foreign Key → `auth.users.id`) - User who received the request
+- `status` (TEXT) - Request status: `pending`, `accepted`, or `declined`
+- `created_at` (TIMESTAMP WITH TIME ZONE) - When request was sent
+- `accepted_at` (TIMESTAMP WITH TIME ZONE, nullable) - When request was accepted
+
+**Constraints:**
+- UNIQUE(`follower_id`, `following_id`) - No duplicate requests
+- CHECK: `follower_id != following_id` - Cannot friend yourself
+
+**Indexes:**
+- `friendships_follower_idx` on `follower_id`
+- `friendships_following_idx` on `following_id`
+- `friendships_status_idx` on `status`
+
+**RLS Policies:**
+- Users can view friendships they're part of (as follower or following)
+- Users can create friend requests (as follower only)
+- Recipients can accept or decline friend requests (UPDATE restricted to `following_id = auth.uid()`)
+- Users can delete friendships they're part of (either party can unfriend/cancel)
+
+---
+
+### 9. `activity_feed`
+
+Stores user achievements (streak milestones) to display in friend activity feeds.
+
+**Columns:**
+- `id` (UUID, Primary Key) - Unique activity identifier
+- `user_id` (UUID, Foreign Key → `auth.users.id`) - Who performed the activity
+- `activity_type` (TEXT) - Type of activity (currently only `streak_milestone`)
+- `activity_data` (JSONB) - Activity details (e.g., `{ "streak_days": 7 }`)
+- `created_at` (TIMESTAMP WITH TIME ZONE) - When the activity occurred
+
+**Activity types (MVP):**
+- `streak_milestone` - User hit N-day streak (3, 7, 14, 30, etc.)
+
+**Indexes:**
+- `activity_feed_user_id_idx` on `user_id`
+- `activity_feed_created_at_idx` on `created_at` (DESC, for feed queries)
+
+**RLS Policies:**
+- Users can view their own activity
+- Users can view accepted friends' activity IF friend is not private:
+  - Bidirectional friendship must exist with status = 'accepted'
+  - Friend's `profiles.is_private` must be `false` (or viewing own activity)
+- Users can insert their own activity
+
+**Common Queries:**
+```sql
+-- Get friend activity feed (respects privacy)
+SELECT af.* FROM activity_feed af
+JOIN friendships f ON (
+  (f.follower_id = 'current_user' AND f.following_id = af.user_id)
+  OR (f.following_id = 'current_user' AND f.follower_id = af.user_id)
+)
+JOIN profiles p ON p.id = af.user_id
+WHERE f.status = 'accepted'
+AND p.is_private = false
+ORDER BY af.created_at DESC;
+```
+
+---
+
+### 10. `shared_meals`
+
+Allows friends to share saved meals with each other. Recipients can copy shared meals to their own library.
+
+**Columns:**
+- `id` (UUID, Primary Key) - Unique share identifier
+- `meal_id` (UUID, Foreign Key → `saved_meals.id`) - The meal being shared
+- `shared_by` (UUID, Foreign Key → `auth.users.id`) - Who shared it
+- `shared_with` (UUID, Foreign Key → `auth.users.id`) - Recipient
+- `message` (TEXT, nullable) - Optional message with the share
+- `is_read` (BOOLEAN, Default: false) - Read status for inbox
+- `created_at` (TIMESTAMP WITH TIME ZONE) - When the meal was shared
+
+**Indexes:**
+- `shared_meals_shared_with_idx` on `shared_with` (for inbox queries)
+- `shared_meals_is_read_idx` on `is_read` (for unread badge counts)
+
+**RLS Policies:**
+- Users can view meals shared with them OR by them
+- Users can share their own meals (validates meal ownership via `saved_meals`)
+- Recipients can update read status (mark as read)
+- Recipients can delete meals shared with them
+
+**Common Queries:**
+```sql
+-- Get unread shared meals inbox
+SELECT sm.*, s.meal_name, s.calories, s.protein_g, s.carbs_g, s.fat_g,
+       p.username, p.display_name, p.profile_picture_url
+FROM shared_meals sm
+JOIN saved_meals s ON s.id = sm.meal_id
+JOIN profiles p ON p.id = sm.shared_by
+WHERE sm.shared_with = 'current_user'
+AND sm.is_read = false
+ORDER BY sm.created_at DESC;
+
+-- Get unread count for badge
+SELECT COUNT(*) FROM shared_meals
+WHERE shared_with = 'current_user'
+AND is_read = false;
+```
+
+---
+
+## Views
+
+### `public_profiles`
+
+Security definer view exposing only non-sensitive profile columns for social feature lookups. All social services (`friendships.ts`, `activityFeed.ts`, `sharedMeals.ts`, `profileService.ts`) query this view instead of the `profiles` table directly.
+
+**Columns:**
+- `id` (UUID)
+- `username` (TEXT)
+- `display_name` (TEXT)
+- `profile_picture_url` (TEXT)
+- `bio` (TEXT)
+- `is_private` (BOOLEAN)
+- `created_at` (TIMESTAMP WITH TIME ZONE)
+
+**Excluded from view (private):** `email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`, `role`, `updated_at`
+
+**Access:**
+- `GRANT SELECT` to `authenticated` role
+- `REVOKE SELECT` from `anon` and `public` roles
+- Security definer mode bypasses profiles RLS, so authenticated users can look up any user's public info
+- Admin search (`adminSearchUsers`) queries `profiles` directly for email/role access
+
+---
+
+## Supabase Storage
+
+### `profile-pictures` Bucket
+
+Public bucket for user profile images. URLs are saved in `profiles.profile_picture_url`.
+
+**Folder structure:** `{user_id}/{timestamp}.jpg`
+
+**Storage Policies:**
+- Users can upload to their own folder (`{user_id}/`)
+- Anyone can view profile pictures (public bucket)
+- Users can update/delete their own pictures
+
+---
+
 ## Relationships
 ```
 auth.users (Supabase managed)
     ↓
-    ├── profiles (1:1)
+    ├── profiles (1:1) - Extended with username, picture, bio, privacy
     ├── user_plans (1:many)
     ├── saved_meals (1:many)
+    │       ↓
+    │       └── shared_meals (1:many) - Track which meals are shared
     ├── daily_logs (1:many)
     ├── weight_logs (1:many)
     ├── user_insights (1:many)
-    └── ai_usage_logs (1:many)
+    ├── ai_usage_logs (1:many)
+    ├── friendships (1:many as follower)
+    ├── friendships (1:many as following)
+    ├── activity_feed (1:many)
+    ├── shared_meals (1:many as sender)
+    └── shared_meals (1:many as recipient)
 ```
 
 ---
@@ -297,8 +467,19 @@ auth.users (Supabase managed)
 
 All tables have RLS enabled with policies ensuring:
 - Users can only access their own data
-- Admins can view additional data (ai_usage_logs)
+- Admins can view additional data (ai_usage_logs, all profiles via `is_admin()` SECURITY DEFINER function)
 - Authentication is required for all operations
+- Cross-user social lookups go through the `public_profiles` view (security definer, non-sensitive columns only)
+
+**Social feature RLS:**
+- **Friendships:** Bidirectional visibility — both follower and following can see and delete the row. Only the follower can create (send request). Only the recipient (`following_id`) can accept/decline (UPDATE).
+- **Activity Feed:** Complex privacy logic — own activity is always visible; friends' activity is visible only if friendship is accepted (bidirectional) AND friend's `is_private = false`. Prevents leaking private users' activities.
+- **Shared Meals:** Both sender and recipient can view. Only the sender can create (must own the meal via `saved_meals`). Only the recipient can mark as read or delete.
+- **Saved Meals:** Users can view meals shared with them (via subquery on `shared_meals.shared_with = auth.uid()`) in addition to their own meals.
+
+### Helper Functions
+
+- **`is_admin()`** — SECURITY DEFINER function that checks `profiles.role = 'admin'` for the current user. Bypasses RLS to avoid infinite recursion when used inside profile policies.
 
 ### Roles
 
@@ -344,6 +525,12 @@ Supabase provides automatic daily backups. Additional considerations:
 - Add `meal_plan_id` foreign key to `daily_logs`
 - Add `tags` (JSONB array) to `saved_meals` for categorization
 - Add `timezone` to `profiles` for accurate time-based queries
+
+### Potential Social Feature Extensions:
+- New `activity_type` values (e.g., `weight_milestone`, `goal_achieved`)
+- Comments/reactions on activity feed items
+- Group challenges between friends
+- Leaderboards and social streaks
 
 ---
 

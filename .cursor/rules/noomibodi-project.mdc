@@ -13,20 +13,33 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **ChatTabScreen** — horizontal pager wrapping QuickLogPage (page 1) and ChatScreen (page 2)
 - **QuickLogPage** — daily calories/macros, add meal photo, weight log, smart suggestions, today's meals
 - **ChatScreen** — conversational interface with Claude, quick action chips, markdown rendering
-- **MealsScreen** — saved meals library with search, sort, macro filters, AI meal builder
+- **MealsTabScreen** — horizontal pager wrapping MealsScreen (saved meals, page 1) and SharedMealsPage (page 2, with unread badge)
+- **MealsScreen** — saved meals library with search, sort, macro filters, AI meal builder, share-with-friend via long-press
+- **SharedMealsPage** — "Share a Meal" button (meal picker → friend picker flow), received meals inbox with add-to-library, collapsible "Shared by You" section showing sent meals, unread indicators
 - **ReportsTabScreen** — horizontal pager wrapping ReportsScreen and InsightsPage
-- **ProfileScreen** — user profile, goals, API key, theme settings
+- **SocialScreen** — activity feed, pending friend requests (collapsible), sent requests (collapsible), friends list (horizontal scroll), weekly leaderboard; "Add Friend" opens AddFriendModal
+- **AddFriendModal** — BottomSheet with user search, friendship status buttons (Follow/Pending/Accept/Friends)
+- **FriendProfileScreen** — RootStack screen showing friend's profile, stats (hidden if private), remove friend action
+- **ProfileTabScreen** — horizontal pager wrapping ProfilePage (page 1) and SettingsPage (page 2)
+- **ProfilePage** — user profile picture, username, bio, stats (streak, days tracked, adherence), goals summary, "Edit Profile" button
+- **SettingsPage** — privacy toggle, API key, appearance, sign out, reset profile
+- **EditProfileScreen** — RootStack screen for editing username, display name, bio, profile picture upload
 - **AdminDashboard** — admin-only tab with AI usage analytics (conditionally shown)
-- **OnboardingScreen** — multi-step onboarding (API key, profile info, goals, activity, account, details, Claude plan); styles in separate `OnboardingScreen.styles.tsx` using `createStyles(colors, isDark)` pattern
+- **OnboardingScreen** — multi-step onboarding (API key, profile info, goals, activity, account, username, details, Claude plan); styles in separate `OnboardingScreen.styles.tsx` using `createStyles(colors, isDark)` pattern
 - **SignInScreen** — standalone sign-in screen shown after sign-out (without profile reset); supports email/password, Apple, and Google sign-in
 - **EmailVerificationScreen** — blocks entry to main app until email is verified; polls session every 5s, has resend with 60s cooldown; skipped for social sign-ins (Google/Apple)
 
 ### Services (src/services/)
 - **claude.ts** — Anthropic Messages API integration, system prompts, response parsing, AI usage logging
 - **claudeTools.ts** — RAG tool definitions + execution for Claude function calling
-- **mealLog.ts** — daily_logs CRUD (Supabase + offline queue)
+- **mealLog.ts** — daily_logs CRUD (Supabase + offline queue); triggers streak milestone check after successful log
 - **savedMeals.ts** — saved_meals CRUD + `clearAllSavedMeals()` for profile reset
-- **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans; `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights
+- **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans; `UserProfile` includes social fields (username, displayName, profilePictureUrl, bio, isPrivate); `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights
+- **profileService.ts** — username validation, availability check, user search via `public_profiles` view (ILIKE on username/display_name), admin search via `profiles` (includes email/role), profile picture upload to Supabase Storage, partial profile field updates, `suggestUsernameFromEmail()`
+- **friendships.ts** — friend request CRUD (send/accept/decline/remove); accept/decline restricted to recipient via `following_id` filter; queries for accepted friends, pending received/sent, friendship status check between two users
+- **activityFeed.ts** — streak milestone insertion, duplicate checking, friend activity feed query (RLS handles privacy); `checkAndRecordMilestone()` for auto-logging milestones
+- **leaderboard.ts** — weekly leaderboard calculation (adherence % = days hit calorie goal / 7); filters out private users; returns ranked list
+- **sharedMeals.ts** — share meals with friends, inbox query (two-step: shared_meals + saved_meals/public_profiles), sent shares query, unread count, mark as read (recipient-only), delete (recipient-only), copy to saved meals
 - **reportData.ts** — weight logs, daily summaries, overview stats
 - **adminAnalytics.ts** — admin dashboard data queries
 - **analytics.ts** — weight prediction, adherence patterns, correlations
@@ -59,9 +72,12 @@ Native WidgetKit extension written in Swift. Shares data with the main app via A
 - **Social Auth**: Apple Sign-In via `@invertase/react-native-apple-authentication`; Google Sign-In via `@react-native-google-signin/google-signin` (patched native iOS code via `patch-package` to support nonce parameter); Google flow requires SHA256 hashed nonce to Google + raw nonce to Supabase `signInWithIdToken`
 - **Identity Linking**: Supabase automatic linking is enabled by default — same email across Google, Apple, and email/password maps to one account
 - **Email Verification**: After email/password sign-up, user completes onboarding but is blocked from the main app by `EmailVerificationScreen` until `email_confirmed_at` is set; social sign-ins skip this
-- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`
-- **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop
-- **Reusable chat input**: `ChatInputBox` component with optional inline image attachment
+- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`; `RootStack` includes `EditProfileScreen` and `FriendProfileScreen` as pushable screens on top of `MainTabs`
+- **Social Features**: Bidirectional friendships (both must accept), privacy toggle (hides activity/leaderboard), streak milestones auto-logged on meal log, weekly leaderboard (Mon-Sun adherence %), meal sharing between accepted friends
+- **Impersonation**: `ImpersonationContext` — admin-only session switching for testing other accounts; `ImpersonationBanner` red border when active; `ImpersonateModal` for admin dashboard search
+- **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop (AddFriendModal, FriendPickerModal, MealPickerModal, ImpersonateModal use this pattern)
+- **Reusable components**: `ChatInputBox` (chat input with image attachment), `ThemedMarkdown` (themed markdown renderer used in chat, AI meal builder, quick log descriptions), `MealPickerModal` (select a meal from library for sharing), `FriendPickerModal` (select friends for sharing)
+- **Profanity filter**: `src/utils/profanityFilter.ts` — client-side check for usernames/display names/bios; skipped for admin accounts
 - **Offline**: writes queued locally via `offlineStore.ts`, synced on reconnect via `useOfflineSync` hook
 - **Day change**: `useDayChange` hook triggers refresh at midnight
 
@@ -80,8 +96,24 @@ Native WidgetKit extension written in Swift. Shares data with the main app via A
 - Apple Sign-In button inverts in dark mode (white bg/dark text); Google button stays blue in both themes
 
 ## Database (Supabase + RLS)
-Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`
+Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`
 Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
+
+**Social columns on `profiles`:** `username` (UNIQUE), `display_name`, `profile_picture_url`, `bio`, `is_private` (default false)
+
+**Views:**
+- `public_profiles` — security definer view exposing only safe columns (`id`, `username`, `display_name`, `profile_picture_url`, `bio`, `is_private`, `created_at`). All social cross-user lookups use this view. Excludes `email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`, `role`. GRANT to `authenticated`, REVOKE from `anon`/`public`.
+
+**Social tables:**
+- `friendships` — bidirectional friend system (follower_id, following_id, status: pending/accepted/declined). Both users can view/delete; only follower can create; only recipient (`following_id`) can accept/decline (UPDATE).
+- `activity_feed` — user achievements (streak milestones). RLS enforces privacy: friends' activity visible only if friendship accepted AND `is_private = false`.
+- `shared_meals` — share saved meals between friends (meal_id FK → saved_meals). Sender must own the meal; recipient can mark read/delete. `saved_meals` has an RLS policy allowing recipients to view shared meals.
+
+**Helper functions:**
+- `is_admin()` — SECURITY DEFINER function checking `profiles.role = 'admin'`, used in admin RLS policies to avoid recursion.
+
+**Storage bucket:** `profile-pictures` (public). Folder structure: `{user_id}/{timestamp}.jpg`. URLs stored in `profiles.profile_picture_url`.
+
 See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
 
 ## Dependencies

@@ -7,6 +7,8 @@ import {
   cacheTodaysMeals,
   getCachedTodaysMeals,
 } from './offlineStore';
+import { checkAndRecordMilestone } from './activityFeed';
+import { getOverviewStats } from './reportData';
 
 export interface MealEntry extends MealData {
   id: string;
@@ -106,6 +108,10 @@ export async function logMeal(
 
     const entry = rowToMealEntry(row);
     if (imageUri) entry.imageUri = imageUri;
+
+    // Check for streak milestones in the background
+    checkStreakMilestone().catch(() => {});
+
     return entry;
   } catch (err) {
     if (isNetworkError(err)) {
@@ -181,6 +187,27 @@ export async function deleteMeal(id: string): Promise<void> {
   }
   const { error } = await supabase.from('daily_logs').delete().eq('id', id);
   if (error) console.error('Error deleting meal:', error);
+}
+
+async function checkStreakMilestone(): Promise<void> {
+  try {
+    const { data: plan } = await supabase
+      .from('user_plans')
+      .select('daily_calories')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!plan?.daily_calories) return;
+
+    const stats = await getOverviewStats(plan.daily_calories);
+    if (stats.streak > 0) {
+      await checkAndRecordMilestone(stats.streak);
+    }
+  } catch {
+    // Non-critical: silently fail
+  }
 }
 
 export async function getDailyTotals(date?: Date): Promise<DailyMacroTotals> {

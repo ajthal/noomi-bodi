@@ -56,6 +56,11 @@ export interface UserProfile {
   activityLevel: ActivityLevel;
   plan?: string | null;
   dailyGoals?: MacroGoals | null;
+  username?: string | null;
+  displayName?: string | null;
+  profilePictureUrl?: string | null;
+  bio?: string | null;
+  isPrivate?: boolean;
 }
 
 // ── Goal estimation (Mifflin-St Jeor) ─────────────────────────────────
@@ -173,7 +178,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { error: profileError } = await supabase.from('profiles').upsert({
+  const upsertData: Record<string, unknown> = {
     id: userId,
     email: user?.email,
     gender: profile.gender,
@@ -182,7 +187,14 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
     current_weight_kg: profile.weightKg,
     activity_level: profile.activityLevel,
     updated_at: new Date().toISOString(),
-  });
+  };
+  if (profile.username !== undefined) upsertData.username = profile.username;
+  if (profile.displayName !== undefined) upsertData.display_name = profile.displayName;
+  if (profile.profilePictureUrl !== undefined) upsertData.profile_picture_url = profile.profilePictureUrl;
+  if (profile.bio !== undefined) upsertData.bio = profile.bio;
+  if (profile.isPrivate !== undefined) upsertData.is_private = profile.isPrivate;
+
+  const { error: profileError } = await supabase.from('profiles').upsert(upsertData);
 
   if (profileError) {
     console.error('Error saving profile:', profileError);
@@ -259,6 +271,11 @@ export async function loadUserProfile(): Promise<UserProfile | null> {
             fat: Number(planData.daily_fat_g),
           }
         : null,
+      username: profileData.username || null,
+      displayName: profileData.display_name || null,
+      profilePictureUrl: profileData.profile_picture_url || null,
+      bio: profileData.bio || null,
+      isPrivate: profileData.is_private ?? false,
     };
 
     await cacheProfile(profile);

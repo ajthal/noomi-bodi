@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import { useTheme } from '../contexts/ThemeContext';
+import { useImpersonation } from '../contexts/ImpersonationContext';
+import ImpersonateModal from '../components/ImpersonateModal';
 import {
   getUsageOverview,
   getUsageByDay,
@@ -89,9 +91,11 @@ const ROLES = ['admin', 'beta', 'pro', 'standard', 'byok'];
 export default function AdminDashboard(): React.JSX.Element {
   const { colors, isDark } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
+  const { isImpersonating } = useImpersonation();
   const chartWidth = screenWidth - 40;
 
   const [loading, setLoading] = useState(true);
+  const [impersonateVisible, setImpersonateVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -248,9 +252,29 @@ export default function AdminDashboard(): React.JSX.Element {
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
-        <TouchableOpacity style={s.refreshBtn} onPress={onRefresh}>
-          <Ionicons name="refresh" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {!isImpersonating && (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#EF4444',
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 16,
+                gap: 5,
+              }}
+              onPress={() => setImpersonateVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="swap-horizontal" size={15} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Impersonate</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={s.refreshBtn} onPress={onRefresh}>
+            <Ionicons name="refresh" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -736,6 +760,8 @@ export default function AdminDashboard(): React.JSX.Element {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <ImpersonateModal visible={impersonateVisible} onClose={() => setImpersonateVisible(false)} />
     </SafeAreaView>
   );
 }

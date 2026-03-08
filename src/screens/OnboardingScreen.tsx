@@ -28,16 +28,22 @@ import {
 } from '../services/storage';
 import { generatePlanWithClaude } from '../services/claude';
 import { feetInchesToCm, lbsToKg } from '../utils/units';
-import Markdown from 'react-native-markdown-display';
+import {
+  validateUsername,
+  checkUsernameAvailable,
+  suggestUsernameFromEmail,
+} from '../services/profileService';
+import { supabase } from '../services/supabase';
+import ThemedMarkdown from '../components/ThemedMarkdown';
 import { createStyles } from './OnboardingScreen.styles.tsx';
 
 interface OnboardingScreenProps {
   onComplete: () => void;
 }
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
-const STEP_LABELS = ['API Key', 'Info', 'Goals', 'Activity', 'Account', 'Details', 'Plan'];
+const STEP_LABELS = ['API Key', 'Info', 'Goals', 'Activity', 'Account', 'Username', 'Details', 'Plan'];
 
 const goalLabels: { value: Goal; label: string }[] = [
   { value: 'lose', label: 'Lose weight' },
@@ -140,17 +146,6 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   const { signUp, signIn, signInWithApple, signInWithGoogle, resetPassword, user } = useAuth();
   const { colors, isDark } = useTheme();
   const styles = React.useMemo(() => createStyles(colors, isDark), [colors, isDark]);
-  const markdownStyles = React.useMemo(() => ({
-    body: { fontSize: 14, color: colors.text, lineHeight: 22 },
-    heading1: { fontSize: 18, fontWeight: '700' as const, color: colors.text, marginBottom: 8 },
-    heading2: { fontSize: 16, fontWeight: '600' as const, color: colors.text, marginBottom: 6 },
-    heading3: { fontSize: 15, fontWeight: '600' as const, color: colors.textSecondary, marginBottom: 4 },
-    bullet_list: { marginVertical: 4 },
-    ordered_list: { marginVertical: 4 },
-    list_item: { marginVertical: 2 },
-    strong: { fontWeight: '600' as const },
-    paragraph: { marginVertical: 4 },
-  }), [colors]);
   const [step, setStep] = useState<Step>(1);
 
   // Step 1: API key
@@ -179,7 +174,11 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   const [isSignInMode, setIsSignInMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Step 6: Extra details (only if API key was entered)
+  // Step 6: Username
+  const [usernameInput, setUsernameInput] = useState('');
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+
+  // Step 7: Extra details (only if API key was entered)
   const [extraDetails, setExtraDetails] = useState<string>('');
 
   // Step 7: Plan
@@ -232,12 +231,12 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   };
 
   const advanceAfterAuth = async () => {
-    const hasKey = apiKeyInput.trim().length > 0 || !!(await getApiKey());
-    if (hasKey) {
-      setStep(6);
-    } else {
-      handleGeneratePlan();
+    // Auto-suggest username from email
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser?.email && !usernameInput) {
+      setUsernameInput(suggestUsernameFromEmail(currentUser.email));
     }
+    setStep(6);
   };
 
   const goNext = async () => {
@@ -328,15 +327,33 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
         setAuthLoading(false);
       }
     } else if (step === 6) {
+      // Username validation
+      const err = validateUsername(usernameInput);
+      if (err) {
+        setUsernameError(err);
+        return;
+      }
+      const available = await checkUsernameAvailable(usernameInput);
+      if (!available) {
+        setUsernameError('This username is already taken. Try another.');
+        return;
+      }
+      setUsernameError(null);
+      const hasKey = apiKeyInput.trim().length > 0 || !!(await getApiKey());
+      if (hasKey) {
+        setStep(7);
+      } else {
+        handleGeneratePlan();
+      }
+    } else if (step === 7) {
       // Details → generate plan
       handleGeneratePlan();
     }
   };
 
   const goBack = () => {
-    if (step === 1 || step === 7 || isGenerating) return;
+    if (step === 1 || step === 8 || isGenerating) return;
     if (step === 6 && user) {
-      // If already authenticated, skip Account step when going back too
       setStep(4);
       return;
     }
@@ -368,7 +385,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
     };
 
     setIsGenerating(true);
-    setStep(7);
+    setStep(8);
 
     try {
       const apiKey = await getApiKey();
@@ -395,6 +412,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       const profileToSave: UserProfile = {
         ...baseProfile,
         plan,
+        username: usernameInput.trim() || null,
       };
 
       await saveUserProfile(profileToSave);
@@ -797,8 +815,43 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       );
     }
 
-    // Step 6: Extra details
+    // Step 6: Username
     if (step === 6) {
+      return (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Choose a username</Text>
+          <Text style={styles.cardSubtitle}>
+            Your username is how friends will find you on NoomiBodi.
+          </Text>
+
+          <Text style={styles.fieldLabel}>Username</Text>
+          <TextInput
+            style={[styles.input, usernameError ? { borderColor: colors.error } : undefined]}
+            placeholder="e.g. sarah_fit"
+            placeholderTextColor={colors.textTertiary}
+            value={usernameInput}
+            onChangeText={t => {
+              setUsernameInput(t.toLowerCase());
+              setUsernameError(null);
+            }}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={20}
+          />
+          {usernameError && (
+            <Text style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>
+              {usernameError}
+            </Text>
+          )}
+          <Text style={styles.apiKeyHint}>
+            3-20 characters. Letters, numbers, and underscores only.
+          </Text>
+        </View>
+      );
+    }
+
+    // Step 7: Extra details
+    if (step === 7) {
       return (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Anything else we should know?</Text>
@@ -819,7 +872,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       );
     }
 
-    // Step 7: Plan
+    // Step 8: Plan
     return (
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Your starting plan</Text>
@@ -840,7 +893,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
             contentContainerStyle={styles.planContent}
             nestedScrollEnabled
           >
-            <Markdown style={markdownStyles}>{planText}</Markdown>
+            <ThemedMarkdown fontSize={14} lineHeight={22}>{planText}</ThemedMarkdown>
           </ScrollView>
         )}
       </View>
@@ -855,19 +908,21 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       return apiKeyInput.trim() ? 'Save & Continue' : 'Skip for Now';
     }
     if (step === 5) return isSignInMode ? 'Sign In' : 'Sign Up';
-    if (step === 6) return 'Generate my plan';
-    if (step === 7) return 'Start using NoomiBodi';
+    if (step === 6) return 'Next';
+    if (step === 7) return 'Generate my plan';
+    if (step === 8) return 'Start using NoomiBodi';
     return 'Next';
   };
 
   const isPrimaryDisabled = () => {
     if (step === 5) return authLoading || !email.trim() || !password.trim();
-    if (step === 7) return isGenerating || !planText;
+    if (step === 6) return !usernameInput.trim();
+    if (step === 8) return isGenerating || !planText;
     return isGenerating;
   };
 
   const handlePrimaryAction = () => {
-    if (step === 7) {
+    if (step === 8) {
       onComplete();
       return;
     }
@@ -888,7 +943,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
 
   const renderFooter = () => (
     <View style={styles.footer}>
-      {step === 7 ? (
+      {step === 8 ? (
         <Pressable
           style={[
             styles.primaryButton,
@@ -942,7 +997,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
     </View>
   );
 
-  if (step === 7) {
+  if (step === 8) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.container}>

@@ -17,6 +17,7 @@ import {
   dismissInsight,
 } from '../services/insightGenerator';
 import { useTheme } from '../contexts/ThemeContext';
+import ThemedMarkdown from '../components/ThemedMarkdown';
 
 // ── Styling helpers ──────────────────────────────────────────────────
 
@@ -147,15 +148,18 @@ export default function InsightsPage(): React.JSX.Element {
                 </TouchableOpacity>
               </View>
 
-              <Text
-                style={[s.cardDesc, { color: colors.textSecondary }]}
-                numberOfLines={isExpanded ? undefined : 2}
-              >
-                {insight.description}
-              </Text>
-
-              {!isExpanded && (
-                <Text style={[s.expandHint, { color: cfg.color }]}>Tap for details</Text>
+              {isExpanded ? (
+                <ThemedMarkdown fontSize={14} lineHeight={20}>{insight.description}</ThemedMarkdown>
+              ) : (
+                <>
+                  <Text
+                    style={[s.cardDesc, { color: colors.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {insight.description}
+                  </Text>
+                  <Text style={[s.expandHint, { color: cfg.color }]}>Tap for details</Text>
+                </>
               )}
 
               {isExpanded && (

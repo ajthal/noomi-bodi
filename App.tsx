@@ -9,14 +9,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
+import { ImpersonationProvider, useImpersonation } from './src/contexts/ImpersonationContext';
+import ImpersonationBanner from './src/components/ImpersonationBanner';
 import ChatTabScreen from './src/screens/ChatTabScreen';
-import MealsScreen from './src/screens/MealsScreen';
+import MealsTabScreen from './src/screens/MealsTabScreen';
 import ReportsTabScreen from './src/screens/ReportsTabScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
+import ProfileTabScreen from './src/screens/ProfileTabScreen';
+import SocialScreen from './src/screens/SocialScreen';
 import AdminDashboard from './src/screens/AdminDashboard';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import SignInScreen from './src/screens/SignInScreen';
 import EmailVerificationScreen from './src/screens/EmailVerificationScreen';
+import EditProfileScreen from './src/screens/EditProfileScreen';
+import FriendProfileScreen from './src/screens/FriendProfileScreen';
 import { loadUserProfile, clearUserProfile, clearMessages } from './src/services/storage';
 import { clearAllSavedMeals } from './src/services/savedMeals';
 import { clearOfflineData } from './src/services/offlineStore';
@@ -46,6 +51,8 @@ function MainTabs({ showAdmin }: { showAdmin: boolean }) {
               iconName = focused ? 'restaurant' : 'restaurant-outline';
             } else if (route.name === 'Reports') {
               iconName = focused ? 'stats-chart' : 'stats-chart-outline';
+            } else if (route.name === 'Social') {
+              iconName = focused ? 'people' : 'people-outline';
             } else if (route.name === 'Admin') {
               iconName = focused ? 'shield-checkmark' : 'shield-checkmark-outline';
             } else {
@@ -64,9 +71,10 @@ function MainTabs({ showAdmin }: { showAdmin: boolean }) {
         })}
       >
         <Tab.Screen name="Home" component={ChatTabScreen} />
-        <Tab.Screen name="Meals" component={MealsScreen} />
+        <Tab.Screen name="Meals" component={MealsTabScreen} />
         <Tab.Screen name="Reports" component={ReportsTabScreen} />
-        <Tab.Screen name="Profile" component={ProfileScreen} />
+        <Tab.Screen name="Social" component={SocialScreen} />
+        <Tab.Screen name="Profile" component={ProfileTabScreen} />
         {showAdmin && <Tab.Screen name="Admin" component={AdminDashboard} />}
       </Tab.Navigator>
     </SafeAreaView>
@@ -91,6 +99,7 @@ type AppScreen = 'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'ma
 function AppInner() {
   const { isDark, colors } = useTheme();
   const { user, isLoading: isAuthLoading, signOut } = useAuth();
+  const { isImpersonating, isSwitching } = useImpersonation();
   const [initialCheckDone, setInitialCheckDone] = useState(false);
   const [screen, setScreen] = useState<AppScreen>('loading');
   const [userRole, setUserRole] = useState<UserRole | null>(null);
@@ -100,6 +109,19 @@ function AppInner() {
     // @ts-ignore - loadFont is available at runtime
     Ionicons.loadFont?.();
   }, []);
+
+  // Reset the initial check when impersonation switching finishes so the
+  // profile/role is re-evaluated for the newly signed-in user.
+  const wasSwitchingRef = React.useRef(false);
+  useEffect(() => {
+    if (isSwitching) {
+      wasSwitchingRef.current = true;
+    } else if (wasSwitchingRef.current) {
+      wasSwitchingRef.current = false;
+      setInitialCheckDone(false);
+      needsUsernameCheckedRef.current = false;
+    }
+  }, [isSwitching]);
 
   // One-time check when auth first resolves on app launch.
   useEffect(() => {
@@ -135,13 +157,14 @@ function AppInner() {
   }, [isAuthLoading, user, initialCheckDone]);
 
   // React to sign-out after the initial check is done.
+  // Suppress during impersonation switching to avoid flashing the sign-in screen.
   useEffect(() => {
-    if (!initialCheckDone || isAuthLoading) return;
+    if (!initialCheckDone || isAuthLoading || isSwitching) return;
     if (!user && (screen === 'main' || screen === 'emailVerification')) {
       setScreen('signIn');
       setUserRole(null);
     }
-  }, [user, initialCheckDone, isAuthLoading, screen]);
+  }, [user, initialCheckDone, isAuthLoading, isSwitching, screen]);
 
   // Ensure role is fetched once user is authenticated and on the main screen.
   useEffect(() => {
@@ -151,6 +174,20 @@ function AppInner() {
       });
     }
   }, [user, screen, userRole]);
+
+  const [needsUsername, setNeedsUsername] = useState(false);
+  const needsUsernameCheckedRef = React.useRef(false);
+
+  // Check if user needs to set a username (existing users before social features)
+  useEffect(() => {
+    if (screen !== 'main' || !user || needsUsernameCheckedRef.current) return;
+    needsUsernameCheckedRef.current = true;
+    loadUserProfile().then(profile => {
+      if (profile && !profile.username) {
+        setNeedsUsername(true);
+      }
+    });
+  }, [screen, user]);
 
   const handleOnboardingComplete = useCallback(() => {
     AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, '1');
@@ -197,13 +234,16 @@ function AppInner() {
     ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: colors.background, card: colors.background } }
     : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.background, card: colors.background } };
 
-  if (screen === 'loading' || isAuthLoading || !initialCheckDone) {
+  if (screen === 'loading' || isAuthLoading || !initialCheckDone || isSwitching) {
     return (
       <NavigationContainer theme={navTheme}>
         <SafeAreaView style={[styles.loadingContainer, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
           <StatusBar barStyle={colors.statusBar} />
           <View style={styles.loadingInner}>
             <ActivityIndicator size="large" color={colors.accent} />
+            {isSwitching && (
+              <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 14 }}>Switching account...</Text>
+            )}
           </View>
         </SafeAreaView>
       </NavigationContainer>
@@ -212,14 +252,29 @@ function AppInner() {
 
   return (
     <OnboardingContext.Provider value={{ onResetProfile }}>
+      <View style={[styles.appWrapper, isImpersonating && styles.impersonatingBorder]}>
       <NavigationContainer theme={navTheme}>
         <StatusBar barStyle={colors.statusBar} />
+        <ImpersonationBanner />
         <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} />
         <RootStack.Navigator screenOptions={{ headerShown: false }}>
           {screen === 'main' && (
-            <RootStack.Screen name="MainTabs">
-              {() => <MainTabs showAdmin={userRole === 'admin'} />}
-            </RootStack.Screen>
+            <>
+              <RootStack.Screen name="MainTabs">
+                {() => <MainTabs showAdmin={userRole === 'admin'} />}
+              </RootStack.Screen>
+              <RootStack.Screen
+                name="EditProfile"
+                component={EditProfileScreen}
+                initialParams={{ isInitialSetup: needsUsername }}
+                listeners={{
+                  beforeRemove: () => {
+                    if (needsUsername) setNeedsUsername(false);
+                  },
+                }}
+              />
+              <RootStack.Screen name="FriendProfile" component={FriendProfileScreen} />
+            </>
           )}
           {screen === 'emailVerification' && (
             <RootStack.Screen name="EmailVerification">
@@ -238,6 +293,7 @@ function AppInner() {
           )}
         </RootStack.Navigator>
       </NavigationContainer>
+      </View>
     </OnboardingContext.Provider>
   );
 }
@@ -247,7 +303,9 @@ function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
-          <AppInner />
+          <ImpersonationProvider>
+            <AppInner />
+          </ImpersonationProvider>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>
@@ -275,6 +333,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  appWrapper: {
+    flex: 1,
+  },
+  impersonatingBorder: {
+    borderWidth: 2,
+    borderColor: '#EF4444',
   },
 });
 

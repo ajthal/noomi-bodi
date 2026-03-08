@@ -40,6 +40,10 @@ local.properties
 .env.local
 .env.*.local
 
+# Test accounts with credentials
+src/utils/testAccounts.ts
+docs/seed_test_accounts.sql
+
 # node.js
 #
 node_modules/
