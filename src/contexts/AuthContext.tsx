@@ -97,9 +97,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: 'Apple Sign-In is only available on iOS' };
     }
     try {
+      const rawNonce = generateNonce();
+
+      // The library SHA256-hashes the nonce internally before sending to Apple,
+      // so pass the raw value here (not pre-hashed).
       const appleResponse = await appleAuth.performRequest({
         requestedOperation: appleAuth.Operation.LOGIN,
         requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+        nonce: rawNonce,
       });
 
       if (!appleResponse.identityToken) {
@@ -109,6 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
         token: appleResponse.identityToken,
+        nonce: rawNonce,
       });
       return { error: error?.message ?? null };
     } catch (err: any) {
