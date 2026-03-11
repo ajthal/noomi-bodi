@@ -28,6 +28,7 @@ import { logMeal } from '../services/mealLog';
 import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
 import { shareMealWithMultiple } from '../services/sharedMeals';
+import { sendNotification } from '../services/notifications';
 import FriendPickerModal from '../components/FriendPickerModal';
 
 const SORT_OPTIONS = [
@@ -256,6 +257,9 @@ export default function MealsScreen(): React.JSX.Element {
       setFriendPickerVisible(false);
       setSharingMealId(null);
       Alert.alert('Shared', `Meal shared with ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}.`);
+      for (const id of selectedIds) {
+        sendNotification('shared_meal', id, {}).catch(() => {});
+      }
     } catch (error) {
       console.error('Failed to share meal:', error);
       Alert.alert('Error', 'Failed to share meal. Try again.');

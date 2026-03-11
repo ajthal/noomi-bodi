@@ -20,6 +20,7 @@ import AddFriendModal from './AddFriendModal';
 import { getAcceptedFriends, FriendWithProfile, getPendingReceived, getPendingSent, acceptFriendRequest, declineFriendRequest } from '../services/friendships';
 import { getFriendActivity, ActivityFeedItem } from '../services/activityFeed';
 import { getWeeklyLeaderboard, LeaderboardEntry, WeekRange } from '../services/leaderboard';
+import { sendNotification } from '../services/notifications';
 
 export default function SocialScreen(): React.JSX.Element {
   const { colors, isDark } = useTheme();
@@ -64,10 +65,13 @@ export default function SocialScreen(): React.JSX.Element {
     if (isFocused) loadData();
   }, [isFocused, loadData]);
 
-  const handleAccept = async (friendshipId: string) => {
+  const handleAccept = async (friendshipId: string, senderId?: string) => {
     try {
       await acceptFriendRequest(friendshipId);
       await loadData();
+      if (senderId) {
+        sendNotification('friend_accepted', senderId, {}).catch(() => {});
+      }
     } catch (error) {
       console.error('Error accepting request:', error);
     }
@@ -157,7 +161,7 @@ export default function SocialScreen(): React.JSX.Element {
                   key={friendship.id}
                   user={profile}
                   createdAt={friendship.createdAt}
-                  onAccept={() => handleAccept(friendship.id)}
+                  onAccept={() => handleAccept(friendship.id, friendship.followerId)}
                   onDecline={() => handleDecline(friendship.id)}
                 />
               ))}

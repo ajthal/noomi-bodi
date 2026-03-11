@@ -9,6 +9,7 @@ import {
 } from './offlineStore';
 import { checkAndRecordMilestone } from './activityFeed';
 import { getOverviewStats } from './reportData';
+import { sendMilestoneNotifications } from './notifications';
 
 export interface MealEntry extends MealData {
   id: string;
@@ -204,6 +205,10 @@ async function checkStreakMilestone(): Promise<void> {
     const stats = await getOverviewStats(plan.daily_calories);
     if (stats.streak > 0) {
       await checkAndRecordMilestone(stats.streak);
+      const userId = await getUserId();
+      if (userId) {
+        sendMilestoneNotifications(userId, stats.streak).catch(() => {});
+      }
     }
   } catch {
     // Non-critical: silently fail

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -27,6 +27,7 @@ import { clearAllSavedMeals } from './src/services/savedMeals';
 import { clearOfflineData } from './src/services/offlineStore';
 import { OnboardingContext } from './src/contexts/OnboardingContext';
 import { useOfflineSync } from './src/hooks/useOfflineSync';
+import { useNotifications } from './src/hooks/useNotifications';
 import { getUserRole, type UserRole } from './src/utils/roleCheck';
 
 const ONBOARDING_COMPLETE_KEY = '@noomibodi_onboarding_complete';
@@ -104,6 +105,8 @@ function AppInner() {
   const [screen, setScreen] = useState<AppScreen>('loading');
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const { isOnline, pendingCount } = useOfflineSync();
+  const navigationRef = React.useRef<any>(null);
+  useNotifications(screen === 'main' && !!user, navigationRef);
 
   useEffect(() => {
     // @ts-ignore - loadFont is available at runtime
@@ -253,7 +256,7 @@ function AppInner() {
   return (
     <OnboardingContext.Provider value={{ onResetProfile }}>
       <View style={[styles.appWrapper, isImpersonating && styles.impersonatingBorder]}>
-      <NavigationContainer theme={navTheme}>
+      <NavigationContainer ref={navigationRef} theme={navTheme}>
         <StatusBar barStyle={colors.statusBar} />
         <ImpersonationBanner />
         <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} />

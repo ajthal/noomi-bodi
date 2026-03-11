@@ -10,6 +10,7 @@ import {
 import { sha256 } from 'js-sha256';
 import { GOOGLE_WEB_CLIENT_ID, GOOGLE_IOS_CLIENT_ID } from '@env';
 import type { Session, User } from '@supabase/supabase-js';
+import { unregisterPushToken } from '../services/notifications';
 
 function generateNonce(length = 32): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -149,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const doSignOut = useCallback(async () => {
+    await unregisterPushToken();
     await supabase.auth.signOut();
   }, []);
 

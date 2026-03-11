@@ -46,6 +46,7 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **insightGenerator.ts** — AI-generated insights via Claude
 - **offlineStore.ts** — offline queue + read cache + `clearOfflineData()` for profile reset
 - **supabase.ts** — Supabase client initialization
+- **notifications.ts** — FCM token registration/unregistration, `sendNotification()` (invokes Edge Function), `sendMilestoneNotifications()`, `claim_device_token` RPC call for stale token cleanup
 - **widgetBridge.ts** — native bridge to write widget data to App Group UserDefaults and reload WidgetKit timelines via `SharedGroupPreferences`
 - **widgetDataSync.ts** — aggregates today's calories/macros from `daily_logs` and goals from `user_plans`, then calls `updateWidgetData()` to push to the widget
 
@@ -66,6 +67,28 @@ Native WidgetKit extension written in Swift. Shares data with the main app via A
 
 **Native bridge files:** `ios/SharedGroupPreferences.h` + `.m` (Obj-C React Native module exposing `set(suiteName, key, value)` and `reloadWidgets()`).
 
+### Push Notifications (Firebase + Supabase Edge Function)
+iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
+
+**Notification types:**
+- `friend_request` — when a user sends a friend request
+- `friend_accepted` — when a recipient accepts a friend request
+- `shared_meal` — when a friend shares a meal
+- `streak_milestone` — when a friend hits a streak milestone (sent to all non-private accepted friends)
+
+**Architecture:**
+- **Client:** `@react-native-firebase/messaging` (modular API) for token management and message listeners
+- **Server:** Supabase Edge Function `send-notification` (Deno) — validates caller JWT, looks up recipient FCM tokens from `device_tokens`, dispatches via FCM HTTP v1 API with Google service account JWT
+- **Native:** `AppDelegate.swift` configures Firebase, implements `UNUserNotificationCenterDelegate` for foreground banners, clears badge on `applicationDidBecomeActive`
+
+**Token lifecycle:** Register on app launch → upsert to `device_tokens` → refresh via `onTokenRefresh` listener → delete on sign-out → stale tokens cleaned via `claim_device_token()` RPC
+
+**Call sites for `sendNotification()`:** AddFriendModal (friend_request, friend_accepted), SocialScreen (friend_accepted), SharedMealsPage (shared_meal), MealsScreen (shared_meal), mealLog.ts (streak_milestone via `sendMilestoneNotifications`)
+
+**Edge Function secrets (Supabase Dashboard → Edge Functions → Secrets):** `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_JSON` (Firebase service account JSON), plus auto-injected `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`
+
+**Deployment:** `supabase functions deploy send-notification --no-verify-jwt` (gateway JWT verification disabled; function validates JWT internally)
+
 ### Key Patterns
 - **Theming**: `useTheme()` hook from `ThemeContext` — apply colors via inline styles `{ color: colors.text }`, not in StyleSheet.create. For screens with separate style files (OnboardingScreen), use `createStyles(colors, isDark)` function pattern with `useMemo`.
 - **Auth**: `useAuth()` from `AuthContext` — wraps Supabase auth; provides `signIn`, `signUp`, `signInWithApple`, `signInWithGoogle`, `signOut`, `resetPassword`, `resendVerificationEmail`, `refreshSession`
@@ -78,6 +101,7 @@ Native WidgetKit extension written in Swift. Shares data with the main app via A
 - **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop (AddFriendModal, FriendPickerModal, MealPickerModal, ImpersonateModal use this pattern)
 - **Reusable components**: `ChatInputBox` (chat input with image attachment), `ThemedMarkdown` (themed markdown renderer used in chat, AI meal builder, quick log descriptions), `MealPickerModal` (select a meal from library for sharing), `FriendPickerModal` (select friends for sharing)
 - **Profanity filter**: `src/utils/profanityFilter.ts` — client-side check for usernames/display names/bios; skipped for admin accounts
+- **Push Notifications**: `useNotifications` hook in `App.tsx` — registers FCM token, listens for foreground/background messages, navigates on tap; `notifications.ts` service handles token CRUD and Edge Function invocation
 - **Offline**: writes queued locally via `offlineStore.ts`, synced on reconnect via `useOfflineSync` hook
 - **Day change**: `useDayChange` hook triggers refresh at midnight
 
@@ -96,7 +120,7 @@ Native WidgetKit extension written in Swift. Shares data with the main app via A
 - Apple Sign-In button inverts in dark mode (white bg/dark text); Google button stays blue in both themes
 
 ## Database (Supabase + RLS)
-Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`
+Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`, `device_tokens`
 Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
 
 **Social columns on `profiles`:** `username` (UNIQUE), `display_name`, `profile_picture_url`, `bio`, `is_private` (default false)
@@ -109,8 +133,12 @@ Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
 - `activity_feed` — user achievements (streak milestones). RLS enforces privacy: friends' activity visible only if friendship accepted AND `is_private = false`.
 - `shared_meals` — share saved meals between friends (meal_id FK → saved_meals). Sender must own the meal; recipient can mark read/delete. `saved_meals` has an RLS policy allowing recipients to view shared meals.
 
+**Push notification tables:**
+- `device_tokens` — FCM token storage (user_id, fcm_token, platform). RLS: users manage own tokens. UNIQUE(user_id, fcm_token). ON DELETE CASCADE from auth.users.
+
 **Helper functions:**
 - `is_admin()` — SECURITY DEFINER function checking `profiles.role = 'admin'`, used in admin RLS policies to avoid recursion.
+- `claim_device_token(p_fcm_token)` — SECURITY DEFINER function that deletes stale `device_tokens` entries for the same FCM token belonging to a different user. Called during token registration to handle device reuse across accounts.
 
 **Storage bucket:** `profile-pictures` (public). Folder structure: `{user_id}/{timestamp}.jpg`. URLs stored in `profiles.profile_picture_url`.
 
@@ -122,5 +150,12 @@ See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
 - @supabase/supabase-js, axios, react-native-vector-icons/Ionicons
 - @invertase/react-native-apple-authentication (Apple Sign-In)
 - @react-native-google-signin/google-signin (Google Sign-In, patched via patch-package for iOS nonce support)
+- @react-native-firebase/app, @react-native-firebase/messaging (push notifications via FCM; use modular API)
 - js-sha256 (nonce hashing for Google Sign-In)
 - patch-package (postinstall script applies native iOS patches)
+
+## Sensitive Files (gitignored)
+- `.env`, `.env.local`, `.env.*.local` — environment secrets
+- `ios/GoogleService-Info.plist` — Firebase config (API keys, project IDs)
+- `supabase/.temp/` — Supabase CLI local state (project ref, pooler URL)
+- `src/utils/testAccounts.ts`, `docs/seed_test_accounts.sql` — test credentials

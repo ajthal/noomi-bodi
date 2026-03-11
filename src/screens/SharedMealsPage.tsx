@@ -25,6 +25,7 @@ import {
   shareMealWithMultiple,
 } from '../services/sharedMeals';
 import type { SavedMeal } from '../services/savedMeals';
+import { sendNotification } from '../services/notifications';
 
 interface SharedMealsPageProps {
   onUnreadCountChange?: (count: number) => void;
@@ -100,6 +101,9 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
       setFriendPickerVisible(false);
       setSelectedMealId(null);
       Alert.alert('Shared', `Meal shared with ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}.`);
+      for (const id of selectedIds) {
+        sendNotification('shared_meal', id, {}).catch(() => {});
+      }
       await refresh();
     } catch (error) {
       console.error('Failed to share meal:', error);

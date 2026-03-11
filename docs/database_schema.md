@@ -399,6 +399,35 @@ AND is_read = false;
 
 ---
 
+### 11. `device_tokens`
+
+Stores FCM (Firebase Cloud Messaging) tokens for push notification delivery. Each row maps a user to a specific device's FCM token.
+
+**Columns:**
+- `id` (UUID, Primary Key) - Unique token entry identifier
+- `user_id` (UUID, Foreign Key → `auth.users.id`, ON DELETE CASCADE) - Token owner
+- `fcm_token` (TEXT, Required) - Firebase Cloud Messaging device token
+- `platform` (TEXT, Default: 'ios') - Device platform
+- `created_at` (TIMESTAMP WITH TIME ZONE) - When token was first registered
+- `updated_at` (TIMESTAMP WITH TIME ZONE) - Last token refresh
+
+**Constraints:**
+- UNIQUE(`user_id`, `fcm_token`) - No duplicate token entries per user
+
+**Indexes:**
+- `device_tokens_user_id_idx` on `user_id`
+
+**RLS Policies:**
+- Users can manage (SELECT, INSERT, UPDATE, DELETE) their own tokens only (`auth.uid() = user_id`)
+
+**Token lifecycle:**
+- Registered on app launch via `registerForPushNotifications()` (after permission grant)
+- Refreshed automatically via Firebase `onTokenRefresh` listener
+- Deleted on sign-out via `unregisterPushToken()`
+- Stale tokens from previous users on the same device are cleaned via `claim_device_token()` RPC
+
+---
+
 ## Views
 
 ### `public_profiles`
@@ -456,7 +485,8 @@ auth.users (Supabase managed)
     ├── friendships (1:many as following)
     ├── activity_feed (1:many)
     ├── shared_meals (1:many as sender)
-    └── shared_meals (1:many as recipient)
+    ├── shared_meals (1:many as recipient)
+    └── device_tokens (1:many) - FCM tokens for push notifications
 ```
 
 ---
@@ -480,6 +510,7 @@ All tables have RLS enabled with policies ensuring:
 ### Helper Functions
 
 - **`is_admin()`** — SECURITY DEFINER function that checks `profiles.role = 'admin'` for the current user. Bypasses RLS to avoid infinite recursion when used inside profile policies.
+- **`claim_device_token(p_fcm_token TEXT)`** — SECURITY DEFINER function that deletes `device_tokens` rows where `fcm_token` matches but `user_id` differs from the caller (`auth.uid()`). Called during token registration to prevent stale tokens from a previous user on the same device from receiving notifications meant for a different account.
 
 ### Roles
 
@@ -516,7 +547,7 @@ Supabase provides automatic daily backups. Additional considerations:
 ### Potential New Tables:
 - `meal_plans` - Saved multi-day meal plans
 - `user_settings` - App preferences and configuration
-- `notifications` - Push notification history
+- `notification_history` - Push notification audit log (currently notifications are fire-and-forget)
 - `feedback` - User feedback and bug reports
 - `api_keys` - If moving away from BYOK model
 

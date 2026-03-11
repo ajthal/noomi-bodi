@@ -19,6 +19,7 @@ import {
   getFriendshipStatus,
   RelationshipStatus,
 } from '../services/friendships';
+import { sendNotification } from '../services/notifications';
 
 interface AddFriendModalProps {
   visible: boolean;
@@ -88,6 +89,7 @@ export default function AddFriendModal({
         ),
       );
       onFriendAdded?.();
+      sendNotification('friend_request', user.id, {}).catch(() => {});
     } catch (error) {
       console.error('Failed to send friend request:', error);
     } finally {
@@ -106,6 +108,7 @@ export default function AddFriendModal({
         ),
       );
       onFriendAdded?.();
+      sendNotification('friend_accepted', user.id, {}).catch(() => {});
     } catch (error) {
       console.error('Failed to accept friend request:', error);
     } finally {

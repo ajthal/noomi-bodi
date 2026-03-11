@@ -21,9 +21,8 @@ export default function SharedMealCard({
 
   return (
     <View style={[s.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      {!sharedMeal.isRead && <View style={s.unreadDot} />}
-
       <View style={s.header}>
+        {!sharedMeal.isRead && <View style={s.unreadDot} />}
         <Text style={[s.mealName, { color: colors.text }]}>{sharedMeal.mealName}</Text>
         <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="close-outline" size={20} color={colors.textTertiary} />
@@ -104,16 +103,13 @@ const s = StyleSheet.create({
     borderWidth: 1,
     padding: 14,
     marginBottom: 12,
-    position: 'relative',
   },
   unreadDot: {
-    position: 'absolute',
-    top: 14,
-    left: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: '#2196F3',
+    marginRight: 6,
   },
   header: {
     flexDirection: 'row',

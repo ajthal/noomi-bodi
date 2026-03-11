@@ -22,6 +22,14 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
+pod 'FirebaseCore', :modular_headers => true
+pod 'FirebaseCoreInternal', :modular_headers => true
+pod 'GoogleUtilities', :modular_headers => true
+pod 'FirebaseInstallations', :modular_headers => true
+pod 'GoogleDataTransport', :modular_headers => true
+pod 'nanopb', :modular_headers => true
+pod 'FirebaseCoreExtension', :modular_headers => true
+
 target 'NoomiBodi' do
   config = use_native_modules!
 
