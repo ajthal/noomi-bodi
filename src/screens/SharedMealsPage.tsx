@@ -4,10 +4,10 @@ import {
   Text,
   SectionList,
   Alert,
-  ActivityIndicator,
   TouchableOpacity,
   Image,
   StyleSheet,
+  RefreshControl,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -26,6 +26,10 @@ import {
 } from '../services/sharedMeals';
 import type { SavedMeal } from '../services/savedMeals';
 import { sendNotification } from '../services/notifications';
+import { SkeletonCard } from '../components/SkeletonLoader';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 interface SharedMealsPageProps {
   onUnreadCountChange?: (count: number) => void;
@@ -42,8 +46,12 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
   const [mealPickerVisible, setMealPickerVisible] = useState(false);
   const [friendPickerVisible, setFriendPickerVisible] = useState(false);
   const [selectedMealId, setSelectedMealId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    setLoadError(null);
     try {
       const [receivedData, sentData] = await Promise.all([
         getSharedWithMe(),
@@ -54,14 +62,18 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
       onUnreadCountChange?.(receivedData.filter(m => !m.isRead).length);
     } catch (error) {
       console.error('Error loading shared meals:', error);
+      setLoadError(getUserFriendlyError(error));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [onUnreadCountChange]);
 
+  const { fetchIfStale, forceFetch } = useStaleFetch(refresh, 30_000);
+
   React.useEffect(() => {
-    if (isFocused) refresh();
-  }, [isFocused, refresh]);
+    if (isFocused) fetchIfStale();
+  }, [isFocused, fetchIfStale]);
 
   const handleAddToMeals = async (meal: SharedMeal) => {
     try {
@@ -70,7 +82,7 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
       await refresh();
     } catch (error) {
       console.error('Error adding shared meal:', error);
-      Alert.alert('Error', 'Could not add meal. Try again.');
+      Alert.alert('Error', getUserFriendlyError(error));
     }
   };
 
@@ -81,8 +93,14 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
         text: 'Remove',
         style: 'destructive',
         onPress: async () => {
-          await deleteSharedMeal(meal.id);
-          await refresh();
+          const prevReceived = received;
+          setReceived(prev => prev.filter(m => m.id !== meal.id));
+          try {
+            await deleteSharedMeal(meal.id);
+          } catch (error) {
+            setReceived(prevReceived);
+            Alert.alert('Error', getUserFriendlyError(error));
+          }
         },
       },
     ]);
@@ -107,14 +125,26 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
       await refresh();
     } catch (error) {
       console.error('Failed to share meal:', error);
-      Alert.alert('Error', 'Failed to share meal. Try again.');
+      Alert.alert('Error', getUserFriendlyError(error));
     }
   };
 
   if (loading) {
     return (
       <View style={[s.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <View style={s.list}>
+          <SkeletonCard height={52} />
+          <SkeletonCard height={100} />
+          <SkeletonCard height={100} />
+        </View>
+      </View>
+    );
+  }
+
+  if (loadError && received.length === 0 && sent.length === 0) {
+    return (
+      <View style={[s.container, { backgroundColor: colors.background }]}>
+        <ErrorState message={loadError} onRetry={() => refresh(false)} />
       </View>
     );
   }
@@ -141,6 +171,14 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
         stickySectionHeadersEnabled={false}
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={forceFetch}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
         ListHeaderComponent={
           <TouchableOpacity
             style={[s.shareButton, { backgroundColor: colors.surface, borderColor: colors.border }]}

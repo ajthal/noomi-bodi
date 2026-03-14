@@ -100,6 +100,12 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 - **Impersonation**: `ImpersonationContext` — admin-only session switching for testing other accounts; `ImpersonationBanner` red border when active; `ImpersonateModal` for admin dashboard search
 - **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop (AddFriendModal, FriendPickerModal, MealPickerModal, ImpersonateModal use this pattern)
 - **Reusable components**: `ChatInputBox` (chat input with image attachment), `ThemedMarkdown` (themed markdown renderer used in chat, AI meal builder, quick log descriptions), `MealPickerModal` (select a meal from library for sharing), `FriendPickerModal` (select friends for sharing)
+- **Loading & Error Components**: `LoadingScreen` (full-screen spinner), `SkeletonLoader` (animated placeholder shapes: `SkeletonText`, `SkeletonCircle`, `SkeletonCard`, `SkeletonRow`), `ErrorState` (error message + retry button, supports `compact` mode), `EmptyState` (icon + title + subtitle + optional CTA, supports `compact` mode), `LoadingButton` (async-aware button with auto-spinner and error Alert), `OfflineBanner` (animated slide-in/out with "Back online" message), `ErrorBoundary` (app-level crash recovery)
+- **Error Handling**: `getUserFriendlyError(err)` in `src/utils/errorMessages.ts` maps technical errors (Supabase, HTTP, Claude, auth, network) to user-facing messages. `isNetworkError(err)` is also exported from there (single source of truth). All screens use these for Alert and ErrorState messages.
+- **Retry Logic**: `withRetry(fn, options?)` in `src/utils/retry.ts` — exponential backoff for transient failures (429, 5xx, rate limit). Applied to `claude.ts` and `notifications.ts`.
+- **Data Fetching**: `useAsyncData(fetcher, options?)` hook standardizes loading/error/refresh pattern. Screens distinguish `loading` (first load, shows skeleton) from `refreshing` (subsequent load, shows RefreshControl spinner).
+- **Stale-Time Guard**: `useStaleFetch(fetchFn, staleTimeMs)` hook prevents redundant re-fetching on tab switches. Returns `fetchIfStale` (skip if fresh), `forceFetch` (pull-to-refresh), `markStale` (invalidate after mutations). Applied to all data-loading screens with per-screen stale times (15s–60s).
+- **Optimistic Updates**: UI updates immediately for reversible operations (friend accept/decline, meal delete, shared meal delete) with rollback on failure.
 - **Profanity filter**: `src/utils/profanityFilter.ts` — client-side check for usernames/display names/bios; skipped for admin accounts
 - **Push Notifications**: `useNotifications` hook in `App.tsx` — registers FCM token, listens for foreground/background messages, navigates on tap; `notifications.ts` service handles token CRUD and Edge Function invocation
 - **Offline**: writes queued locally via `offlineStore.ts`, synced on reconnect via `useOfflineSync` hook
@@ -113,6 +119,9 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 - `colors.surface` for card backgrounds, `colors.border` for card borders, `borderRadius: 14` for cards
 - 12px spacing between sibling components on QuickLogPage
 - All modals use `BottomSheet` wrapper (tap/drag dismiss, dark backdrop)
+- Every screen with async data uses skeleton loaders (not ActivityIndicator) for initial load, `RefreshControl` for pull-to-refresh, `ErrorState` for fetch failures, and `EmptyState` for zero-data scenarios
+- All error messages shown to users go through `getUserFriendlyError()` — never show raw error messages
+- Tab-switching uses `useStaleFetch` to avoid redundant re-fetches; data stays visible while background refresh runs
 - Claude responses parsed with markers: `[MEAL_DATA]`, `[PLAN_START]`, `[SAVE_MEAL]`, `[PORTION]`
 - AI usage logged to `ai_usage_logs` table after every Claude API call
 - Onboarding and auth screens always follow system theme (ThemeProvider defaults to `mode: 'system'`)

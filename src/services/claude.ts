@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { withRetry } from '../utils/retry';
 import { MealData, UserProfile } from './storage';
 import { cmToFeetInchesStr, kgToLbs } from '../utils/units';
 import { TOOL_DEFINITIONS, executeTool } from './claudeTools';
@@ -166,7 +167,7 @@ export async function sendMessageToClaude(
     'Content-Type': 'application/json',
   };
 
-  const axiosOpts = { headers, maxContentLength: Infinity, maxBodyLength: Infinity };
+  const axiosOpts = { headers, maxContentLength: Infinity, maxBodyLength: Infinity, timeout: 60000 };
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     try {
@@ -180,7 +181,7 @@ export async function sendMessageToClaude(
         body.system = systemPrompt.trim();
       }
 
-      const response = await axios.post(API_URL, body, axiosOpts);
+      const response = await withRetry(() => axios.post(API_URL, body, axiosOpts));
       const { content, stop_reason, usage } = response.data;
 
       if (usage) {
@@ -564,7 +565,7 @@ async function sendSimpleMessage(
   }));
 
   try {
-    const response = await axios.post(
+    const response = await withRetry(() => axios.post(
       API_URL,
       { model: CLAUDE_MODEL, max_tokens: 1024, messages: apiMessages },
       {
@@ -573,8 +574,9 @@ async function sendSimpleMessage(
           'anthropic-version': '2023-06-01',
           'Content-Type': 'application/json',
         },
+        timeout: 30000,
       },
-    );
+    ));
 
     const { usage } = response.data;
     logAiUsage({

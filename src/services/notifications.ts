@@ -6,6 +6,7 @@ import {
   requestPermission,
 } from '@react-native-firebase/messaging';
 import { supabase } from './supabase';
+import { withRetry } from '../utils/retry';
 
 export type NotificationType =
   | 'friend_request'
@@ -83,9 +84,12 @@ export async function sendNotification(
   recipientId: string,
   data: Record<string, string>,
 ): Promise<void> {
-  await supabase.functions.invoke('send-notification', {
-    body: { type, recipientId, data },
-  });
+  await withRetry(
+    () => supabase.functions.invoke('send-notification', {
+      body: { type, recipientId, data },
+    }),
+    { maxRetries: 1 },
+  );
 }
 
 export async function sendMilestoneNotifications(

@@ -13,6 +13,8 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import BottomSheet from './BottomSheet';
 import ThemedMarkdown from './ThemedMarkdown';
+import { ErrorState } from './ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   sendMessageToClaude,
@@ -69,7 +71,7 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
         setPreview(cleaned);
       }
     } catch (e: any) {
-      setError(e.message || 'Failed to generate updated plan');
+      setError(getUserFriendlyError(e));
     } finally {
       setLoading(false);
     }
@@ -88,7 +90,7 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
       handleReset();
       onClose();
     } catch (e: any) {
-      setError(e.message || 'Failed to save plan');
+      setError(getUserFriendlyError(e));
     } finally {
       setLoading(false);
     }
@@ -139,7 +141,7 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
               />
 
               {error && (
-                <Text style={[s.errorText, { color: colors.error }]}>{error}</Text>
+                <ErrorState message={error} compact onRetry={() => { setError(null); handleGenerate(); }} />
               )}
 
               <TouchableOpacity
@@ -175,7 +177,7 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
               </ScrollView>
 
               {error && (
-                <Text style={[s.errorText, { color: colors.error }]}>{error}</Text>
+                <ErrorState message={error} compact onRetry={() => { setError(null); setPreview(null); }} />
               )}
 
               <View style={s.actionRow}>
@@ -239,10 +241,6 @@ const s = StyleSheet.create({
     fontSize: 15,
     minHeight: 100,
     maxHeight: 160,
-  },
-  errorText: {
-    fontSize: 13,
-    marginTop: 8,
   },
   generateBtn: {
     flexDirection: 'row',

@@ -11,6 +11,8 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ImpersonationProvider, useImpersonation } from './src/contexts/ImpersonationContext';
 import ImpersonationBanner from './src/components/ImpersonationBanner';
+import { OfflineBanner } from './src/components/OfflineBanner';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import ChatTabScreen from './src/screens/ChatTabScreen';
 import MealsTabScreen from './src/screens/MealsTabScreen';
 import ReportsTabScreen from './src/screens/ReportsTabScreen';
@@ -79,19 +81,6 @@ function MainTabs({ showAdmin }: { showAdmin: boolean }) {
         {showAdmin && <Tab.Screen name="Admin" component={AdminDashboard} />}
       </Tab.Navigator>
     </SafeAreaView>
-  );
-}
-
-function OfflineBanner({ isOnline, pendingCount }: { isOnline: boolean; pendingCount: number }) {
-  if (isOnline && pendingCount === 0) return null;
-  const label = !isOnline
-    ? 'You are offline'
-    : `Syncing ${pendingCount} pending item${pendingCount !== 1 ? 's' : ''}...`;
-
-  return (
-    <View style={styles.offlineBanner}>
-      <Text style={styles.offlineBannerText}>{label}</Text>
-    </View>
   );
 }
 
@@ -304,13 +293,15 @@ function AppInner() {
 function App() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <ImpersonationProvider>
-            <AppInner />
-          </ImpersonationProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <AuthProvider>
+            <ImpersonationProvider>
+              <AppInner />
+            </ImpersonationProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -326,16 +317,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  offlineBanner: {
-    backgroundColor: '#FF9800',
-    paddingVertical: 4,
-    alignItems: 'center',
-  },
-  offlineBannerText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
   },
   appWrapper: {
     flex: 1,

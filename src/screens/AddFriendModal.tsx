@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import BottomSheet from '../components/BottomSheet';
@@ -20,6 +21,7 @@ import {
   RelationshipStatus,
 } from '../services/friendships';
 import { sendNotification } from '../services/notifications';
+import { getUserFriendlyError } from '../utils/errorMessages';
 
 interface AddFriendModalProps {
   visible: boolean;
@@ -92,6 +94,7 @@ export default function AddFriendModal({
       sendNotification('friend_request', user.id, {}).catch(() => {});
     } catch (error) {
       console.error('Failed to send friend request:', error);
+      Alert.alert('Error', getUserFriendlyError(error));
     } finally {
       setActionLoading(null);
     }
@@ -111,6 +114,7 @@ export default function AddFriendModal({
       sendNotification('friend_accepted', user.id, {}).catch(() => {});
     } catch (error) {
       console.error('Failed to accept friend request:', error);
+      Alert.alert('Error', getUserFriendlyError(error));
     } finally {
       setActionLoading(null);
     }

@@ -6,12 +6,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { SkeletonCircle, SkeletonText, SkeletonCard } from '../components/SkeletonLoader';
+import { EmptyState } from '../components/EmptyState';
+import { getUserFriendlyError } from '../utils/errorMessages';
 import { getPublicProfile, PublicProfile } from '../services/profileService';
 import {
   getFriendshipStatus,
@@ -56,9 +58,14 @@ export default function FriendProfileScreen({ route, navigation }: FriendProfile
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
-            await removeFriend(friendshipId);
-            setRelationship('none');
-            setFriendshipId(null);
+            try {
+              await removeFriend(friendshipId);
+              setRelationship('none');
+              setFriendshipId(null);
+            } catch (error) {
+              console.error('Remove friend failed:', error);
+              Alert.alert('Error', getUserFriendlyError(error));
+            }
           },
         },
       ],
@@ -67,19 +74,44 @@ export default function FriendProfileScreen({ route, navigation }: FriendProfile
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <SafeAreaView style={[s.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={[s.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[s.headerTitle, { color: colors.text }]}>Profile</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={s.content}>
+          <View style={s.profileHeader}>
+            <SkeletonCircle style={s.avatarSkeleton} size={120} />
+            <SkeletonText lines={1} lastLineWidth="40%" style={s.skeletonUsername} />
+            <SkeletonText lines={1} lastLineWidth="30%" style={s.skeletonDisplayName} />
+            <SkeletonText lines={2} lastLineWidth="70%" style={s.skeletonBio} />
+          </View>
+          <SkeletonCard height={60} style={s.skeletonCard} />
+        </View>
       </SafeAreaView>
     );
   }
 
   if (!profile) {
     return (
-      <SafeAreaView style={[s.loadingContainer, { backgroundColor: colors.background }]}>
-        <Text style={[s.emptyText, { color: colors.textSecondary }]}>User not found</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={[s.backLink, { color: colors.accent }]}>Go back</Text>
-        </TouchableOpacity>
+      <SafeAreaView style={[s.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={[s.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[s.headerTitle, { color: colors.text }]}>Profile</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <EmptyState
+          icon="person-outline"
+          title="User not found"
+          subtitle="This profile may have been removed or the link is invalid."
+          actionLabel="Go back"
+          onAction={() => navigation.goBack()}
+        />
       </SafeAreaView>
     );
   }
@@ -153,19 +185,6 @@ const s = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  backLink: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -185,6 +204,24 @@ const s = StyleSheet.create({
   profileHeader: {
     alignItems: 'center',
     marginBottom: 24,
+  },
+  avatarSkeleton: {
+    alignSelf: 'center',
+  },
+  skeletonUsername: {
+    marginTop: 14,
+    alignSelf: 'center',
+  },
+  skeletonDisplayName: {
+    marginTop: 8,
+    alignSelf: 'center',
+  },
+  skeletonBio: {
+    marginTop: 8,
+    alignSelf: 'center',
+  },
+  skeletonCard: {
+    marginTop: 0,
   },
   avatar: {
     width: 120,

@@ -5,7 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
+  RefreshControl,
   useWindowDimensions,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
@@ -32,6 +32,10 @@ import {
 } from '../services/analytics';
 import { kgToLbs } from '../utils/units';
 import { useTheme } from '../contexts/ThemeContext';
+import { SkeletonCard, SkeletonText } from '../components/SkeletonLoader';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 // ── Period filter ────────────────────────────────────────────────────
 
@@ -64,6 +68,8 @@ export default function ReportsScreen(): React.JSX.Element {
   };
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('week');
 
   const [goals, setGoals] = useState<MacroGoals | null>(null);
@@ -75,8 +81,13 @@ export default function ReportsScreen(): React.JSX.Element {
   const [patterns, setPatterns] = useState<DayOfWeekPattern[]>([]);
   const [correlations, setCorrelations] = useState<Correlation[]>([]);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  const fetchAll = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setLoadError(null);
     try {
       const [p, s, w, aw] = await Promise.all([
         loadUserProfile(),
@@ -105,14 +116,25 @@ export default function ReportsScreen(): React.JSX.Element {
       }
     } catch (e) {
       console.error('Reports fetch error:', e);
+      setLoadError(getUserFriendlyError(e));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [period]);
 
+  const { fetchIfStale, forceFetch, markStale } = useStaleFetch(fetchAll, 60_000);
+
   useEffect(() => {
-    if (isFocused) fetchAll();
-  }, [isFocused, fetchAll]);
+    if (isFocused) fetchIfStale();
+  }, [isFocused, fetchIfStale]);
+
+  // Period change should invalidate staleness and re-fetch
+  useEffect(() => {
+    markStale();
+    fetchAll(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
   // ── Derived data ───────────────────────────────────────────────────
 
@@ -201,10 +223,38 @@ export default function ReportsScreen(): React.JSX.Element {
 
   // ── Render helpers ─────────────────────────────────────────────────
 
+  if (loadError && !goals && summaries.length === 0 && !overview && allWeights.length === 0) {
+    return (
+      <ErrorState
+        message={loadError}
+        onRetry={() => fetchAll(false)}
+      />
+    );
+  }
+
   if (loading) {
     return (
-      <View style={[s.center, { backgroundColor: colors.surfaceAlt }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+      <View style={[s.root, { backgroundColor: colors.surfaceAlt }]}>
+        <ScrollView style={s.scrollArea} contentContainerStyle={s.content}>
+          <View style={s.filterRow}>
+            {[1, 2, 3].map(i => (
+              <SkeletonCard key={i} height={36} style={{ width: 80 }} />
+            ))}
+          </View>
+          <SkeletonText lines={1} lastLineWidth="40%" style={{ marginBottom: 10 }} />
+          <View style={s.cardGrid}>
+            {[1, 2, 3, 4].map(i => (
+              <SkeletonCard key={i} height={90} style={{ width: '48%' }} />
+            ))}
+          </View>
+          <SkeletonText lines={1} lastLineWidth="30%" style={{ marginBottom: 10 }} />
+          <SkeletonCard height={220} style={{ marginBottom: 18 }} />
+          <SkeletonText lines={1} lastLineWidth="35%" style={{ marginBottom: 10 }} />
+          <SkeletonCard height={200} style={{ marginBottom: 18 }} />
+          <SkeletonText lines={1} lastLineWidth="40%" style={{ marginBottom: 10 }} />
+          <SkeletonCard height={220} style={{ marginBottom: 18 }} />
+          <View style={{ height: 16 }} />
+        </ScrollView>
       </View>
     );
   }
@@ -218,7 +268,18 @@ export default function ReportsScreen(): React.JSX.Element {
 
   return (
     <View style={[s.root, { backgroundColor: colors.surfaceAlt }]}>
-    <ScrollView style={s.scrollArea} contentContainerStyle={s.content}>
+    <ScrollView
+      style={s.scrollArea}
+      contentContainerStyle={s.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={forceFetch}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+        />
+      }
+    >
       {/* ── Period filter ──────────────────────────────────────────── */}
       <View style={s.filterRow}>
         {(['week', 'month', 'all'] as Period[]).map(p => (

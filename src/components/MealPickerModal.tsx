@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import BottomSheet from './BottomSheet';
+import { EmptyState } from './EmptyState';
 import { useTheme } from '../contexts/ThemeContext';
 import { getSavedMeals, SavedMeal } from '../services/savedMeals';
 
@@ -58,11 +59,12 @@ export default function MealPickerModal({ visible, onClose, onSelect }: MealPick
         {loading ? (
           <ActivityIndicator size="large" color={colors.accent} style={s.loader} />
         ) : filtered.length === 0 ? (
-          <Text style={[s.emptyText, { color: colors.textSecondary }]}>
-            {meals.length === 0
-              ? 'No saved meals yet. Save a meal first!'
-              : 'No meals match your search.'}
-          </Text>
+          <EmptyState
+            icon={meals.length === 0 ? 'bookmark-outline' : 'search-outline'}
+            title={meals.length === 0 ? 'No saved meals yet' : 'No meals match your search'}
+            subtitle={meals.length === 0 ? 'Save a meal first!' : undefined}
+            compact
+          />
         ) : (
           <FlatList
             data={filtered}
@@ -123,11 +125,6 @@ const s = StyleSheet.create({
   },
   loader: {
     marginVertical: 40,
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 30,
   },
   list: {
     maxHeight: 340,

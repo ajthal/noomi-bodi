@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { isNetworkError } from '../utils/errorMessages';
 import { syncWidgetData } from './widgetDataSync';
 import type { MealData, UserProfile } from './storage';
 import type { MealEntry } from './mealLog';
@@ -45,20 +46,6 @@ function nextPendingId(): string {
 async function getUserId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
   return user?.id ?? null;
-}
-
-function isNetworkError(err: unknown): boolean {
-  if (!err) return false;
-  const msg = String((err as any)?.message ?? err).toLowerCase();
-  return (
-    msg.includes('network') ||
-    msg.includes('fetch') ||
-    msg.includes('timeout') ||
-    msg.includes('aborterror') ||
-    msg.includes('econnrefused') ||
-    msg.includes('enotfound') ||
-    msg.includes('failed to fetch')
-  );
 }
 
 // ── Write Queue ──────────────────────────────────────────────────────

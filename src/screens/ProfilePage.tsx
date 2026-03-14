@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
+  RefreshControl,
   StyleSheet,
 } from 'react-native';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
@@ -13,6 +13,10 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import ThemedMarkdown from '../components/ThemedMarkdown';
 import UpdatePlanModal from '../components/UpdatePlanModal';
+import { SkeletonCard, SkeletonCircle, SkeletonText } from '../components/SkeletonLoader';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 import {
   loadUserProfile,
   UserProfile,
@@ -27,14 +31,21 @@ export default function ProfilePage(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const isFocused = useIsFocused();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<OverviewStats | null>(null);
   const [planExpanded, setPlanExpanded] = useState(false);
   const [updatePlanVisible, setUpdatePlanVisible] = useState(false);
 
-  useEffect(() => {
-    if (!isFocused) return;
-    const load = async () => {
+  const loadData = useCallback(
+    async (isRefresh: boolean) => {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setLoadError(null);
       try {
         const p = await loadUserProfile();
         setProfile(p);
@@ -44,19 +55,48 @@ export default function ProfilePage(): React.JSX.Element {
           setStats(overview);
         }
       } catch (error) {
-        console.warn('Failed to load profile data:', error);
+        const message = getUserFriendlyError(error);
+        setLoadError(message);
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    };
-    load();
-  }, [isFocused]);
+    },
+    [],
+  );
+
+  const { fetchIfStale, forceFetch } = useStaleFetch(loadData, 60_000);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    fetchIfStale();
+  }, [isFocused, fetchIfStale]);
 
   if (loading) {
     return (
-      <View style={[s.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
+      <ScrollView
+        style={[s.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={s.profileHeader}>
+          <SkeletonCircle size={100} />
+          <SkeletonText lines={2} lastLineWidth="50%" style={{ marginTop: 12, width: 100 }} />
+          <SkeletonText lines={1} lastLineWidth="40%" style={{ marginTop: 8, width: 80 }} />
+        </View>
+        <View style={s.statsGrid}>
+          <SkeletonCard style={{ flex: 1 }} height={80} />
+          <SkeletonCard style={{ flex: 1 }} height={80} />
+          <SkeletonCard style={{ flex: 1 }} height={80} />
+        </View>
+        <SkeletonCard height={100} />
+      </ScrollView>
+    );
+  }
+
+  if (loadError && !profile) {
+    return (
+      <ErrorState message={loadError} onRetry={() => loadData(false)} />
     );
   }
 
@@ -67,6 +107,14 @@ export default function ProfilePage(): React.JSX.Element {
       style={[s.container, { backgroundColor: colors.background }]}
       contentContainerStyle={s.content}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={forceFetch}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+        />
+      }
     >
       {/* Profile header */}
       <View style={s.profileHeader}>
@@ -214,11 +262,6 @@ function MacroPill({
 const s = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   content: {
     padding: 20,

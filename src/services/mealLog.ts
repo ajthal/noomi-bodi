@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { MealData } from './storage';
+import { isNetworkError } from '../utils/errorMessages';
 import {
   enqueueMealLog,
   removePendingItem,
@@ -59,20 +60,6 @@ function rowToMealEntry(row: any): MealEntry {
     imageUri,
     imageBase64,
   };
-}
-
-function isNetworkError(err: unknown): boolean {
-  if (!err) return false;
-  const msg = String((err as any)?.message ?? err).toLowerCase();
-  return (
-    msg.includes('network') ||
-    msg.includes('fetch') ||
-    msg.includes('timeout') ||
-    msg.includes('aborterror') ||
-    msg.includes('econnrefused') ||
-    msg.includes('enotfound') ||
-    msg.includes('failed to fetch')
-  );
 }
 
 // ── CRUD operations ──────────────────────────────────────────────────

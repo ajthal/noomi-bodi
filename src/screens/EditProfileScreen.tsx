@@ -12,6 +12,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { SkeletonCircle, SkeletonText } from '../components/SkeletonLoader';
+import { getUserFriendlyError } from '../utils/errorMessages';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -109,7 +111,7 @@ export default function EditProfileScreen({ navigation }: EditProfileScreenProps
       setPictureUrl(url);
     } catch (error) {
       console.error('Upload failed:', error);
-      Alert.alert('Upload failed', 'Could not upload photo. Try again.');
+      Alert.alert('Upload failed', getUserFriendlyError(error));
     } finally {
       setUploading(false);
     }
@@ -153,7 +155,7 @@ export default function EditProfileScreen({ navigation }: EditProfileScreenProps
       navigation.goBack();
     } catch (error) {
       console.error('Save failed:', error);
-      Alert.alert('Error', 'Failed to save profile. Try again.');
+      Alert.alert('Error', getUserFriendlyError(error));
     } finally {
       setSaving(false);
     }
@@ -161,8 +163,25 @@ export default function EditProfileScreen({ navigation }: EditProfileScreenProps
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <SafeAreaView style={[s.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={[s.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[s.headerTitle, { color: colors.text }]}>Edit Profile</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={s.content}>
+          <View style={s.pictureSection}>
+            <SkeletonCircle style={s.pictureSkeleton} size={120} />
+          </View>
+          <SkeletonText lines={1} lastLineWidth="30%" style={s.skeletonLabel} />
+          <SkeletonText lines={1} lastLineWidth="100%" style={s.skeletonInput} />
+          <SkeletonText lines={1} lastLineWidth="25%" style={s.skeletonLabel} />
+          <SkeletonText lines={1} lastLineWidth="80%" style={s.skeletonInput} />
+          <SkeletonText lines={1} lastLineWidth="15%" style={s.skeletonLabel} />
+          <SkeletonText lines={3} lastLineWidth="60%" style={s.skeletonInput} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -286,11 +305,6 @@ const s = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -310,6 +324,16 @@ const s = StyleSheet.create({
   pictureSection: {
     alignItems: 'center',
     marginBottom: 24,
+  },
+  pictureSkeleton: {
+    alignSelf: 'center',
+  },
+  skeletonLabel: {
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  skeletonInput: {
+    marginTop: 6,
   },
   picture: {
     width: 120,

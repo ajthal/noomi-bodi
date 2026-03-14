@@ -12,6 +12,7 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import {
@@ -58,6 +59,11 @@ import { useDeepLink } from '../hooks/useDeepLink';
 import { useTheme } from '../contexts/ThemeContext';
 import SmartRecommendations from '../components/SmartRecommendations';
 import ThemedMarkdown from '../components/ThemedMarkdown';
+import { SkeletonCard, SkeletonText, SkeletonRow } from '../components/SkeletonLoader';
+import { EmptyState } from '../components/EmptyState';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -101,11 +107,15 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
   const [descExpanded, setDescExpanded] = useState(false);
   const [weightInput, setWeightInput] = useState('');
   const [loggingWeight, setLoggingWeight] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const isFocused = useIsFocused();
 
   // ── Data loading ──────────────────────────────────────────────────
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    setLoadError(null);
     try {
       const [key, prof, meals, daily] = await Promise.all([
         getApiKey(),
@@ -120,14 +130,23 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
       setTotals(daily);
     } catch (e) {
       console.error('QuickLogPage refresh error:', e);
+      setLoadError(getUserFriendlyError(e));
     } finally {
       setInitialLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
+  const { fetchIfStale, forceFetch, markStale } = useStaleFetch(refresh, 15_000);
+
   useEffect(() => {
-    if (isFocused) refresh();
-  }, [isFocused, refresh, refreshTrigger]);
+    if (isFocused) fetchIfStale();
+  }, [isFocused, fetchIfStale]);
+
+  // Cross-screen invalidation: when ChatScreen logs a meal, refreshTrigger increments
+  useEffect(() => {
+    if (refreshTrigger > 0) markStale();
+  }, [refreshTrigger, markStale]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -188,7 +207,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
       });
     } catch (e: any) {
       console.error('Image analysis error:', e);
-      Alert.alert('Error', e?.message || 'Failed to analyze the image.');
+      Alert.alert('Error', getUserFriendlyError(e));
     } finally {
       setAnalyzing(false);
     }
@@ -228,13 +247,13 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
       await logMeal(data, pendingResult.imageUri, pendingResult.imageBase64);
       setEditModalVisible(false);
       setPendingResult(null);
-      await refresh();
+      await refresh(false);
       onMealLogged();
       const userId = (await supabase.auth.getUser()).data.user?.id;
       if (userId) await syncWidgetData(userId);
     } catch (e) {
       console.error('Failed to log meal:', e);
-      Alert.alert('Error', 'Could not log the meal.');
+      Alert.alert('Error', getUserFriendlyError(e));
     }
   }, [pendingResult, refresh, onMealLogged]);
 
@@ -263,15 +282,22 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await deleteMeal(meal.id);
-          await refresh();
-          onMealLogged();
-          const userId = (await supabase.auth.getUser()).data.user?.id;
-          if (userId) await syncWidgetData(userId);
+          const prevMeals = todaysMeals;
+          setTodaysMeals(prev => prev.filter(m => m.id !== meal.id));
+          try {
+            await deleteMeal(meal.id);
+            await refresh(false);
+            onMealLogged();
+            const userId = (await supabase.auth.getUser()).data.user?.id;
+            if (userId) await syncWidgetData(userId);
+          } catch (e) {
+            setTodaysMeals(prevMeals);
+            Alert.alert('Error', getUserFriendlyError(e));
+          }
         },
       },
     ]);
-  }, [refresh, onMealLogged]);
+  }, [refresh, onMealLogged, todaysMeals]);
 
   // ── Weight logging ────────────────────────────────────────────────
 
@@ -298,12 +324,27 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
   const now = new Date();
   const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // ── Loading ───────────────────────────────────────────────────────
+  // ── Loading / Error ──────────────────────────────────────────────
 
   if (initialLoading) {
     return (
       <View style={[s.root, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 60 }} />
+        <View style={s.scrollContent}>
+          <SkeletonText lines={2} style={{ marginBottom: 16 }} />
+          <SkeletonCard height={120} />
+          <SkeletonCard height={52} />
+          <SkeletonCard height={44} />
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
+      </View>
+    );
+  }
+
+  if (loadError && !profile) {
+    return (
+      <View style={[s.root, { backgroundColor: colors.background }]}>
+        <ErrorState message={loadError} onRetry={() => refresh(false)} />
       </View>
     );
   }
@@ -316,6 +357,14 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={forceFetch}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
       >
         {/* Header */}
         <Text style={[s.todayTitle, { color: colors.text }]}>Today</Text>
@@ -466,10 +515,17 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
         )}
 
         {/* Today's Meals */}
-        {todaysMeals.length > 0 && (
-          <View style={s.mealsSection}>
-            <Text style={[s.mealsSectionTitle, { color: colors.text }]}>Today's Meals</Text>
-            {todaysMeals.map(meal => {
+        <View style={s.mealsSection}>
+          <Text style={[s.mealsSectionTitle, { color: colors.text }]}>Today's Meals</Text>
+          {todaysMeals.length === 0 && !pendingResult && (
+            <EmptyState
+              icon="restaurant-outline"
+              title="No meals logged yet today"
+              subtitle="Take a photo of your meal to get started"
+              compact
+            />
+          )}
+          {todaysMeals.map(meal => {
               const imageSource = meal.imageUri?.startsWith('data:')
                 ? { uri: meal.imageUri }
                 : meal.imageUri
@@ -503,8 +559,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
                 </TouchableOpacity>
               );
             })}
-          </View>
-        )}
+        </View>
       </ScrollView>
 
       {pendingResult && (

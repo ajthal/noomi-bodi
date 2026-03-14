@@ -18,6 +18,10 @@ import {
 } from '../services/insightGenerator';
 import { useTheme } from '../contexts/ThemeContext';
 import ThemedMarkdown from '../components/ThemedMarkdown';
+import { SkeletonCard } from '../components/SkeletonLoader';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 // ── Styling helpers ──────────────────────────────────────────────────
 
@@ -36,34 +40,43 @@ export default function InsightsPage(): React.JSX.Element {
 
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setLoadError(null);
     try {
-      const result = await generateInsights(force);
+      const result = await generateInsights(isRefresh);
       setInsights(result.filter(i => !i.isDismissed));
     } catch (e) {
-      console.error('Error loading insights:', e);
+      setLoadError(getUserFriendlyError(e));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
+  const { fetchIfStale, forceFetch } = useStaleFetch(load, 60_000);
+
   useEffect(() => {
     if (!isFocused) return;
-    setLoading(true);
-    load().finally(() => setLoading(false));
-  }, [isFocused, load]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load(true);
-    setRefreshing(false);
-  }, [load]);
+    fetchIfStale();
+  }, [isFocused, fetchIfStale]);
 
   const handleDismiss = useCallback(async (id: string) => {
     setInsights(prev => prev.filter(i => i.id !== id));
     await dismissInsight(id);
   }, []);
+
+  const handleRetry = useCallback(() => {
+    forceFetch();
+  }, [forceFetch]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId(prev => (prev === id ? null : id));
@@ -73,10 +86,27 @@ export default function InsightsPage(): React.JSX.Element {
 
   if (loading) {
     return (
-      <View style={[s.center, { backgroundColor: colors.surfaceAlt }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={[s.loadingText, { color: colors.textSecondary }]}>Loading insights…</Text>
+      <View style={[s.root, { backgroundColor: colors.surfaceAlt }]}>
+        <ScrollView style={s.scrollArea} contentContainerStyle={s.content}>
+          <View style={s.headerRow}>
+            <View style={{ flex: 1 }} />
+            <SkeletonCard height={36} style={{ width: 100 }} />
+          </View>
+          <SkeletonCard height={14} style={{ marginBottom: 18, width: '80%' }} />
+          <SkeletonCard height={120} />
+          <SkeletonCard height={100} />
+          <SkeletonCard height={140} />
+        </ScrollView>
       </View>
+    );
+  }
+
+  if (loadError && insights.length === 0) {
+    return (
+      <ErrorState
+        message={loadError}
+        onRetry={handleRetry}
+      />
     );
   }
 
@@ -87,7 +117,7 @@ export default function InsightsPage(): React.JSX.Element {
         <View style={s.headerRow}>
           <Text style={[s.title, { color: colors.text }]}>AI Insights</Text>
           <TouchableOpacity
-            onPress={handleRefresh}
+            onPress={forceFetch}
             disabled={refreshing}
             style={[s.refreshBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
           >
@@ -194,7 +224,6 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   scrollArea: { flex: 1 },
   content: { padding: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   headerRow: {
     flexDirection: 'row',
@@ -255,6 +284,4 @@ const s = StyleSheet.create({
     marginTop: 10,
   },
   generatingText: { fontSize: 14, textAlign: 'center' },
-
-  loadingText: { fontSize: 14, marginTop: 10 },
 });

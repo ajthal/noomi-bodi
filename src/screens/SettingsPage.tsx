@@ -21,6 +21,7 @@ import { updateProfileFields } from '../services/profileService';
 import { OnboardingContext } from '../contexts/OnboardingContext';
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
 import PrivacyToggle from '../components/PrivacyToggle';
+import { getUserFriendlyError } from '../utils/errorMessages';
 
 export default function SettingsPage(): React.JSX.Element {
   const { user, signOut } = useAuth();
@@ -57,7 +58,7 @@ export default function SettingsPage(): React.JSX.Element {
       setApiKeyInput('');
       setStatus('Claude API key saved.');
     } catch (error) {
-      setStatus('Failed to save key. Please try again.');
+      setStatus(getUserFriendlyError(error));
     }
   };
 
@@ -67,7 +68,7 @@ export default function SettingsPage(): React.JSX.Element {
       setSavedApiKey(null);
       setStatus('Claude API key cleared.');
     } catch (error) {
-      setStatus('Failed to clear key. Please try again.');
+      setStatus(getUserFriendlyError(error));
     }
   };
 
@@ -77,7 +78,7 @@ export default function SettingsPage(): React.JSX.Element {
       await updateProfileFields({ is_private: value });
     } catch (error) {
       setIsPrivate(!value);
-      console.error('Failed to update privacy:', error);
+      Alert.alert('Privacy update failed', getUserFriendlyError(error));
     }
   };
 

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import BottomSheet from './BottomSheet';
+import { EmptyState } from './EmptyState';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAcceptedFriends, FriendWithProfile } from '../services/friendships';
 
@@ -62,9 +63,12 @@ export default function FriendPickerModal({
         {loading ? (
           <ActivityIndicator size="large" color={colors.accent} style={s.loader} />
         ) : friends.length === 0 ? (
-          <Text style={[s.emptyText, { color: colors.textSecondary }]}>
-            No friends yet. Add friends from the Social tab!
-          </Text>
+          <EmptyState
+            icon="people-outline"
+            title="No friends yet"
+            subtitle="Add friends from the Social tab!"
+            compact
+          />
         ) : (
           <>
             <FlatList
@@ -138,11 +142,6 @@ const s = StyleSheet.create({
   },
   loader: {
     marginVertical: 40,
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 30,
   },
   list: {
     maxHeight: 280,

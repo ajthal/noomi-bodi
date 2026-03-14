@@ -5,8 +5,9 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
-  ActivityIndicator,
+  Alert,
   StyleSheet,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
@@ -21,6 +22,10 @@ import { getAcceptedFriends, FriendWithProfile, getPendingReceived, getPendingSe
 import { getFriendActivity, ActivityFeedItem } from '../services/activityFeed';
 import { getWeeklyLeaderboard, LeaderboardEntry, WeekRange } from '../services/leaderboard';
 import { sendNotification } from '../services/notifications';
+import { SkeletonCard, SkeletonRow, SkeletonCircle } from '../components/SkeletonLoader';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 export default function SocialScreen(): React.JSX.Element {
   const { colors, isDark } = useTheme();
@@ -37,9 +42,13 @@ export default function SocialScreen(): React.JSX.Element {
   const [addFriendVisible, setAddFriendVisible] = useState(false);
   const [pendingExpanded, setPendingExpanded] = useState(true);
   const [sentExpanded, setSentExpanded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setLoadError(null);
     try {
       const [friendsList, pendingList, sentList, feedItems, lb] = await Promise.all([
         getAcceptedFriends(),
@@ -56,33 +65,45 @@ export default function SocialScreen(): React.JSX.Element {
       setWeekRange(lb.weekRange);
     } catch (error) {
       console.error('Error loading social data:', error);
+      setLoadError(getUserFriendlyError(error));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
+  const { fetchIfStale, forceFetch } = useStaleFetch(loadData, 30_000);
+
   React.useEffect(() => {
-    if (isFocused) loadData();
-  }, [isFocused, loadData]);
+    if (isFocused) fetchIfStale();
+  }, [isFocused, fetchIfStale]);
 
   const handleAccept = async (friendshipId: string, senderId?: string) => {
+    const prevPending = pending;
+    setPending(prev => prev.filter(p => p.friendship.id !== friendshipId));
     try {
       await acceptFriendRequest(friendshipId);
-      await loadData();
+      await loadData(false);
       if (senderId) {
         sendNotification('friend_accepted', senderId, {}).catch(() => {});
       }
     } catch (error) {
       console.error('Error accepting request:', error);
+      setPending(prevPending);
+      Alert.alert('Error', getUserFriendlyError(error));
     }
   };
 
   const handleDecline = async (friendshipId: string) => {
+    const prevPending = pending;
+    setPending(prev => prev.filter(p => p.friendship.id !== friendshipId));
     try {
       await declineFriendRequest(friendshipId);
-      await loadData();
+      await loadData(false);
     } catch (error) {
       console.error('Error declining request:', error);
+      setPending(prevPending);
+      Alert.alert('Error', getUserFriendlyError(error));
     }
   };
 
@@ -93,7 +114,27 @@ export default function SocialScreen(): React.JSX.Element {
   if (loading) {
     return (
       <SafeAreaView style={[s.loadingContainer, { backgroundColor: colors.background }]} edges={['top']}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <View style={s.content}>
+          <SkeletonCard height={80} />
+          <SkeletonCard height={80} />
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+            <SkeletonCircle size={56} />
+            <SkeletonCircle size={56} />
+            <SkeletonCircle size={56} />
+            <SkeletonCircle size={56} />
+          </View>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadError && friends.length === 0) {
+    return (
+      <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <ErrorState message={loadError} onRetry={() => loadData(false)} />
       </SafeAreaView>
     );
   }
@@ -116,6 +157,14 @@ export default function SocialScreen(): React.JSX.Element {
       <ScrollView
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={forceFetch}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
       >
         {/* Activity Feed */}
         <View style={s.section}>

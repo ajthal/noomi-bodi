@@ -9,6 +9,7 @@ import {
   Alert,
   TouchableOpacity,
   Image,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
@@ -44,10 +45,51 @@ import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
 import { useDayChange } from '../hooks/useDayChange';
 import { useTheme } from '../contexts/ThemeContext';
+import { SkeletonText, SkeletonRow } from '../components/SkeletonLoader';
+import { getUserFriendlyError } from '../utils/errorMessages';
 
 // In-memory cache: imageUri → base64. Lives for the session so we can
 // attach the base64 data to meal entries when the user taps "Log Meal".
 const imageBase64Cache = new Map<string, string>();
+
+function TypingIndicator({ color }: { color: string }) {
+  const dots = useRef([
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+  ]).current;
+
+  useEffect(() => {
+    const animations = dots.map((dot, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 200),
+          Animated.timing(dot, { toValue: 1, duration: 400, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+        ]),
+      ),
+    );
+    animations.forEach(a => a.start());
+    return () => animations.forEach(a => a.stop());
+  }, [dots]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 }}>
+      {dots.map((dot, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: color,
+            opacity: dot,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
 
 // ── Shared constants ──────────────────────────────────────────────────
 
@@ -267,7 +309,7 @@ export default function ChatScreen({
       console.error('Failed to send message:', error);
       setMessages([
         ...newMessages,
-        { text: 'Sorry, I encountered an error. Please try again.', role: 'assistant', timestamp: Date.now() },
+        { text: getUserFriendlyError(error), role: 'assistant', timestamp: Date.now() },
       ]);
     } finally {
       setIsLoading(false);
@@ -328,7 +370,7 @@ export default function ChatScreen({
       Alert.alert('Saved', `"${data.name}" has been added to your meal library.`);
     } catch (e) {
       console.error('Failed to save meal to library:', e);
-      Alert.alert('Error', 'Could not save the meal. Please try again.');
+      Alert.alert('Error', getUserFriendlyError(e));
     }
   };
 
@@ -410,7 +452,12 @@ export default function ChatScreen({
   if (!ready) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+        <View style={{ padding: 20 }}>
+          <SkeletonText lines={2} style={{ marginBottom: 24 }} />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
       </View>
     );
   }
@@ -468,8 +515,8 @@ export default function ChatScreen({
           ))}
           {isLoading && (
             <View style={[styles.messageContainer, styles.assistantMessage, { backgroundColor: colors.assistantBubble }]}>
-              <ActivityIndicator size="small" color="#4CAF50" />
-              <Text style={[styles.thinkingText, { color: colors.textSecondary }]}>Thinking...</Text>
+              <Text style={[styles.role, { color: colors.textSecondary }]}>NoomiBodi</Text>
+              <TypingIndicator color={colors.accent} />
             </View>
           )}
         </ScrollView>

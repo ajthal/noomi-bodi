@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   RefreshControl,
   ScrollView,
@@ -15,6 +16,8 @@ import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import { useTheme } from '../contexts/ThemeContext';
 import { useImpersonation } from '../contexts/ImpersonationContext';
 import ImpersonateModal from '../components/ImpersonateModal';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
 import {
   getUsageOverview,
   getUsageByDay,
@@ -138,8 +141,8 @@ export default function AdminDashboard(): React.JSX.Element {
       setActiveUsers(active);
       setRoleDistribution(roles);
       setRecentErrors(errors);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load data');
+    } catch (e) {
+      setError(getUserFriendlyError(e));
     }
   }, [chartDays]);
 
@@ -211,8 +214,8 @@ export default function AdminDashboard(): React.JSX.Element {
         u.userId === userId ? { ...u, role: newRole } : u
       ));
       setRolePickerUser(null);
-    } catch (e: any) {
-      console.error('Failed to update role:', e);
+    } catch (e) {
+      Alert.alert('Role update failed', getUserFriendlyError(e));
     }
   }, []);
 
@@ -238,11 +241,7 @@ export default function AdminDashboard(): React.JSX.Element {
           <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
         </View>
         <View style={s.centerState}>
-          <Ionicons name="alert-circle-outline" size={40} color={colors.error} />
-          <Text style={[s.errorText, { color: colors.textSecondary }]}>{error}</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
-            <Text style={s.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
+          <ErrorState message={error} onRetry={onRefresh} />
         </View>
       </SafeAreaView>
     );

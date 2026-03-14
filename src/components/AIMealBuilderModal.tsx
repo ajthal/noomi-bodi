@@ -11,6 +11,8 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import BottomSheet from './BottomSheet';
 import ChatInputBox, { type PendingImage } from './ChatInputBox';
+import { ErrorState } from './ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
 import ThemedMarkdown from './ThemedMarkdown';
 import {
   sendMessageToClaude,
@@ -120,7 +122,7 @@ export default function AIMealBuilderModal({ visible, onGenerated, onCancel }: P
       setResult({ mealData, recipe });
     } catch (e) {
       console.error('AI meal builder error:', e);
-      setError('Something went wrong. Please try again.');
+      setError(getUserFriendlyError(e));
     } finally {
       setLoading(false);
     }
@@ -203,7 +205,7 @@ export default function AIMealBuilderModal({ visible, onGenerated, onCancel }: P
             />
 
             {error && (
-              <Text style={[s.errorText, { color: colors.error }]}>{error}</Text>
+              <ErrorState message={error} compact onRetry={() => { setError(null); handleGenerate(); }} />
             )}
 
             {loading && (
@@ -292,11 +294,6 @@ const s = StyleSheet.create({
   tagText: {
     fontSize: 14,
     fontWeight: '600',
-  },
-  errorText: {
-    fontSize: 13,
-    marginTop: 10,
-    textAlign: 'center',
   },
   loadingRow: {
     flexDirection: 'row',
