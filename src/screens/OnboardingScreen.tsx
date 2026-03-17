@@ -501,7 +501,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
           {showConnected ? (
             <>
               <View style={styles.connectedBanner}>
-                <Ionicons name="checkmark-circle" size={22} color="#10b981" />
+                <Ionicons name="checkmark-circle" size={22} color="#8B5CF6" />
                 <Text style={styles.connectedBannerText}>API key connected</Text>
               </View>
 

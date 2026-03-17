@@ -201,11 +201,11 @@ export default function SmartRecommendations({ onMealLogged }: Props) {
             </View>
             {rec.logged ? (
               <View style={s.loggedBadge}>
-                <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={20} color="#7C3AED" />
               </View>
             ) : rec.mealData ? (
               <TouchableOpacity style={s.quickAddBtn} onPress={() => handleLog(i)}>
-                <Ionicons name="add-circle" size={24} color="#4CAF50" />
+                <Ionicons name="add-circle" size={24} color="#7C3AED" />
               </TouchableOpacity>
             ) : null}
           </View>

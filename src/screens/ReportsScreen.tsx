@@ -318,7 +318,7 @@ export default function ReportsScreen(): React.JSX.Element {
         <StatCard
           colors={colors}
           icon="checkmark-circle-outline"
-          iconColor="#4CAF50"
+          iconColor="#7C3AED"
           label="Adherence"
           value={`${overview?.adherenceDays ?? 0}/${overview?.adherenceTotal ?? 0} days`}
         />
@@ -438,7 +438,7 @@ export default function ReportsScreen(): React.JSX.Element {
             }
             size={32}
             color={
-              goalProj.status === 'on_track' ? '#4CAF50' :
+              goalProj.status === 'on_track' ? '#7C3AED' :
               goalProj.status === 'behind' ? '#FF9800' : colors.textSecondary
             }
           />
@@ -451,7 +451,7 @@ export default function ReportsScreen(): React.JSX.Element {
               <Text style={[s.projHeadline, { color: colors.text }]}>
                 On track for {goalProj.goalLbs} lbs
               </Text>
-              <Text style={[s.projDate, { color: '#4CAF50' }]}>
+              <Text style={[s.projDate, { color: '#7C3AED' }]}>
                 ~{goalProj.estimatedDate}
               </Text>
               <Text style={[s.projDetail, { color: colors.textSecondary }]}>
@@ -468,7 +468,7 @@ export default function ReportsScreen(): React.JSX.Element {
               </Text>
             </>
           ) : (
-            <Text style={[s.projHeadline, { color: '#4CAF50' }]}>
+            <Text style={[s.projHeadline, { color: '#7C3AED' }]}>
               You've reached your goal weight!
             </Text>
           )}
@@ -490,7 +490,7 @@ export default function ReportsScreen(): React.JSX.Element {
             .map(p => {
               const adherence = p.calorieAdherenceRate;
               const barColor =
-                adherence >= 70 ? '#4CAF50' :
+                adherence >= 70 ? '#7C3AED' :
                 adherence >= 40 ? '#FF9800' : '#F44336';
               return (
                 <View key={p.day} style={s.patternRow}>
@@ -523,7 +523,7 @@ export default function ReportsScreen(): React.JSX.Element {
                 }
                 size={20}
                 color={
-                  c.type === 'positive' ? '#4CAF50' :
+                  c.type === 'positive' ? '#7C3AED' :
                   c.type === 'negative' ? '#F44336' : '#2196F3'
                 }
               />
@@ -626,7 +626,7 @@ const s = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#eee',
   },
-  filterPillActive: { backgroundColor: '#4CAF50' },
+  filterPillActive: { backgroundColor: '#7C3AED' },
   filterText: { fontSize: 14, color: '#555', fontWeight: '500' },
   filterTextActive: { color: '#fff' },
 

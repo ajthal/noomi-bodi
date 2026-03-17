@@ -127,8 +127,8 @@ export default function AddFriendModal({
     switch (user.relationship) {
       case 'accepted':
         return (
-          <View style={[s.badge, { backgroundColor: '#4CAF5020' }]}>
-            <Text style={[s.badgeText, { color: '#4CAF50' }]}>Friends</Text>
+          <View style={[s.badge, { backgroundColor: '#7C3AED20' }]}>
+            <Text style={[s.badgeText, { color: '#7C3AED' }]}>Friends</Text>
           </View>
         );
       case 'pending_sent':
@@ -140,7 +140,7 @@ export default function AddFriendModal({
       case 'pending_received':
         return (
           <TouchableOpacity
-            style={[s.actionBtn, { backgroundColor: '#4CAF50' }]}
+            style={[s.actionBtn, { backgroundColor: '#7C3AED' }]}
             onPress={() => handleAccept(user)}
           >
             <Text style={s.actionBtnText}>Accept</Text>

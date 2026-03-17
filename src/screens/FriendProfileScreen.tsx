@@ -144,8 +144,8 @@ export default function FriendProfileScreen({ route, navigation }: FriendProfile
             <Text style={[s.bio, { color: colors.textSecondary }]}>{profile.bio}</Text>
           ) : null}
           {relationship === 'accepted' && (
-            <View style={[s.friendBadge, { backgroundColor: '#4CAF5020' }]}>
-              <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
+            <View style={[s.friendBadge, { backgroundColor: '#7C3AED20' }]}>
+              <Ionicons name="checkmark-circle" size={14} color="#7C3AED" />
               <Text style={s.friendBadgeText}>Friends</Text>
             </View>
           )}
@@ -263,7 +263,7 @@ const s = StyleSheet.create({
   friendBadgeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#4CAF50',
+    color: '#7C3AED',
   },
   privacyNotice: {
     flexDirection: 'row',

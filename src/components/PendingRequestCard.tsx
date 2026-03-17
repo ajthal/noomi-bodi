@@ -114,7 +114,7 @@ const s = StyleSheet.create({
     marginLeft: 62,
   },
   acceptBtn: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 10,

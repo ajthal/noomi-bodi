@@ -82,7 +82,7 @@ const CHART_FILTER_DAYS = [
 ];
 
 const PIE_COLORS = [
-  '#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#E91E63',
+  '#7C3AED', '#2196F3', '#FF9800', '#9C27B0', '#E91E63',
   '#00BCD4', '#FF5722', '#3F51B5', '#8BC34A', '#FFC107',
   '#795548', '#009688', '#F44336', '#673AB7',
 ];
@@ -290,8 +290,8 @@ export default function AdminDashboard(): React.JSX.Element {
                 label="Today"
                 value={fmtNum(overview.todayCalls)}
                 sub={`${fmtCost(overview.todayCost)} spent`}
-                color="#4CAF50"
-                bgColor={isDark ? '#1a2e1a' : '#E8F5E9'}
+                color="#7C3AED"
+                bgColor={isDark ? '#1a1033' : '#EDE9FE'}
               />
               <OverviewCard
                 label="This Week"
@@ -332,7 +332,7 @@ export default function AdminDashboard(): React.JSX.Element {
                 label="Avg Latency"
                 value={`${fmtNum(overview.avgLatencyMs)}ms`}
                 sub={`${overview.errorRate.toFixed(1)}% error rate`}
-                color={overview.errorRate > 5 ? '#d32f2f' : '#4CAF50'}
+                color={overview.errorRate > 5 ? '#d32f2f' : '#7C3AED'}
                 bgColor={isDark ? '#1e1e1e' : '#FAFAFA'}
               />
             </View>
@@ -348,8 +348,8 @@ export default function AdminDashboard(): React.JSX.Element {
                 label="Today"
                 value={fmtNum(activeUsers.daily)}
                 sub="active today"
-                color="#4CAF50"
-                bgColor={isDark ? '#1a2e1a' : '#E8F5E9'}
+                color="#7C3AED"
+                bgColor={isDark ? '#1a1033' : '#EDE9FE'}
               />
               <OverviewCard
                 label="This Week"
@@ -654,7 +654,7 @@ export default function AdminDashboard(): React.JSX.Element {
                   <Text style={[s.activityEmail, { color: colors.text }]} numberOfLines={1}>
                     {log.userEmail}
                   </Text>
-                  <View style={[s.activityStatus, { backgroundColor: log.success ? '#4CAF50' : '#d32f2f' }]} />
+                  <View style={[s.activityStatus, { backgroundColor: log.success ? '#7C3AED' : '#d32f2f' }]} />
                 </View>
                 <View style={s.activityMeta}>
                   <Text style={[s.activityMetaItem, { color: colors.textSecondary }]}>
@@ -715,7 +715,7 @@ export default function AdminDashboard(): React.JSX.Element {
               </View>
             ))
           ) : (
-            <Text style={[s.emptyText, { color: '#4CAF50' }]}>No errors — looking good!</Text>
+            <Text style={[s.emptyText, { color: '#7C3AED' }]}>No errors — looking good!</Text>
           )}
         </View>
       </ScrollView>

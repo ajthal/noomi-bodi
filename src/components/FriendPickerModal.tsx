@@ -96,7 +96,7 @@ export default function FriendPickerModal({
                     <Ionicons
                       name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
                       size={24}
-                      color={isSelected ? '#4CAF50' : colors.textTertiary}
+                      color={isSelected ? '#7C3AED' : colors.textTertiary}
                     />
                   </TouchableOpacity>
                 );
@@ -182,7 +182,7 @@ const s = StyleSheet.create({
   },
   sendBtn: {
     marginTop: 12,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',

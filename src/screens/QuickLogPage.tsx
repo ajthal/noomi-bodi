@@ -437,7 +437,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
 
         {/* Analysis Result Card */}
         {pendingResult && (
-          <View style={[s.resultCard, { backgroundColor: colors.surface, borderColor: isDark ? '#2e7d32' : '#c8e6c9' }]}>
+          <View style={[s.resultCard, { backgroundColor: colors.surface, borderColor: isDark ? '#5B21B6' : '#DDD6FE' }]}>
             <View style={s.resultHeader}>
               <Image source={{ uri: pendingResult.imageUri }} style={s.resultImage} />
               <View style={s.resultInfo}>
@@ -493,7 +493,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
 
             {mealLogged && (
               <View style={s.loggedBanner}>
-                <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={16} color="#7C3AED" />
                 <Text style={s.loggedBannerText}>Meal logged!</Text>
               </View>
             )}
@@ -551,7 +551,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
                     <Text style={[s.mealName, { color: colors.text }]} numberOfLines={1}>{meal.name}</Text>
                   </View>
                   <View style={s.mealMacroRow}>
-                    <MacroPill label="Cal" value={meal.calories} color="#4CAF50" textSecondary={colors.textSecondary} />
+                    <MacroPill label="Cal" value={meal.calories} color="#7C3AED" textSecondary={colors.textSecondary} />
                     <MacroPill label="Protein" value={meal.protein} unit="g" color="#2196F3" textSecondary={colors.textSecondary} />
                     <MacroPill label="Carbs" value={meal.carbs} unit="g" color="#FF9800" textSecondary={colors.textSecondary} />
                     <MacroPill label="Fat" value={meal.fat} unit="g" color="#9C27B0" textSecondary={colors.textSecondary} />
@@ -639,7 +639,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     borderRadius: 14,
     paddingVertical: 16,
   },
@@ -724,7 +724,7 @@ const s = StyleSheet.create({
   },
   showMoreText: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: '#7C3AED',
     fontWeight: '600',
     marginTop: 4,
   },
@@ -741,7 +741,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     borderRadius: 10,
     paddingVertical: 12,
   },
@@ -775,7 +775,7 @@ const s = StyleSheet.create({
   loggedBannerText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#7C3AED',
   },
   saveRow: {
     flexDirection: 'row',

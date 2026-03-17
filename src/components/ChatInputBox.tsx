@@ -141,7 +141,7 @@ export default function ChatInputBox({
           <Ionicons
             name={sendIcon as any}
             size={32}
-            color={canSend ? '#4CAF50' : colors.textTertiary}
+            color={canSend ? '#7C3AED' : colors.textTertiary}
           />
         </TouchableOpacity>
       </View>

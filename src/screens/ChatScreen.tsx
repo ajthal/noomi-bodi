@@ -52,6 +52,8 @@ import { getUserFriendlyError } from '../utils/errorMessages';
 // attach the base64 data to meal entries when the user taps "Log Meal".
 const imageBase64Cache = new Map<string, string>();
 
+const noomiAvatar = require('../assets/noomi.png');
+
 function TypingIndicator({ color }: { color: string }) {
   const dots = useRef([
     new Animated.Value(0.3),
@@ -101,7 +103,7 @@ const QUICK_ACTIONS = [
     id: 'meal-plan',
     label: 'Create meal plan',
     icon: 'calendar-outline' as const,
-    color: '#4CAF50',
+    color: '#7C3AED',
     prompt: 'Create a 7-day meal plan that hits my macro and calorie goals. Consider my saved meals and preferences.',
   },
   {
@@ -408,7 +410,7 @@ export default function ChatScreen({
             </Text>
             {msg.mealLogged ? (
               <View style={styles.mealLoggedBadge}>
-                <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
                 <Text style={styles.mealLoggedText}>Logged</Text>
               </View>
             ) : (
@@ -421,7 +423,7 @@ export default function ChatScreen({
                   style={styles.editMealButton}
                   onPress={() => setEditingMeal({ index, data: msg.mealData! })}
                 >
-                  <Ionicons name="pencil-outline" size={16} color="#4CAF50" />
+                  <Ionicons name="pencil-outline" size={16} color={colors.accent} />
                   <Text style={styles.editMealButtonText}>Edit & Log</Text>
                 </TouchableOpacity>
               </View>
@@ -484,8 +486,8 @@ export default function ChatScreen({
         >
           {messages.length === 0 && (
             <View style={styles.emptyState}>
-              <Ionicons name="chatbubble-ellipses-outline" size={48} color={colors.textTertiary} />
-              <Text style={[styles.emptyTitle, { color: colors.textTertiary }]}>Advanced Chat</Text>
+              <Image source={noomiAvatar} style={{ width: 80, height: 80, borderRadius: 40 }} />
+              <Text style={[styles.emptyTitle, { color: colors.textTertiary }]}>Chat with Noomi</Text>
               <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
                 Have a detailed conversation about your meals, nutrition goals, or snap a photo for analysis.
               </Text>
@@ -501,7 +503,14 @@ export default function ChatScreen({
                   : [styles.assistantMessage, { backgroundColor: colors.assistantBubble }],
               ]}
             >
-              <Text style={[styles.role, { color: colors.textSecondary }]}>{msg.role === 'user' ? 'You' : 'NoomiBodi'}</Text>
+              {msg.role === 'assistant' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Image source={noomiAvatar} style={{ width: 22, height: 22, borderRadius: 11 }} />
+                  <Text style={[styles.role, { color: colors.textSecondary, marginBottom: 0 }]}>Noomi</Text>
+                </View>
+              ) : (
+                <Text style={[styles.role, { color: colors.textSecondary }]}>You</Text>
+              )}
               {msg.imageUri && (
                 <Image source={{ uri: msg.imageUri }} style={styles.messageImage} resizeMode="cover" />
               )}
@@ -515,7 +524,10 @@ export default function ChatScreen({
           ))}
           {isLoading && (
             <View style={[styles.messageContainer, styles.assistantMessage, { backgroundColor: colors.assistantBubble }]}>
-              <Text style={[styles.role, { color: colors.textSecondary }]}>NoomiBodi</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Image source={noomiAvatar} style={{ width: 22, height: 22, borderRadius: 11 }} />
+                <Text style={[styles.role, { color: colors.textSecondary, marginBottom: 0 }]}>Noomi</Text>
+              </View>
               <TypingIndicator color={colors.accent} />
             </View>
           )}

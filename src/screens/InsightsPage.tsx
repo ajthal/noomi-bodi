@@ -26,7 +26,7 @@ import { useStaleFetch } from '../hooks/useStaleFetch';
 // ── Styling helpers ──────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<InsightType, { icon: string; color: string; bgLight: string; bgDark: string }> = {
-  success:        { icon: 'checkmark-circle', color: '#4CAF50', bgLight: '#E8F5E9', bgDark: '#1b3a1b' },
+  success:        { icon: 'checkmark-circle', color: '#7C3AED', bgLight: '#EDE9FE', bgDark: '#1a1033' },
   warning:        { icon: 'warning',          color: '#FF9800', bgLight: '#FFF3E0', bgDark: '#3a2e1b' },
   recommendation: { icon: 'bulb',             color: '#2196F3', bgLight: '#E3F2FD', bgDark: '#1b2d3a' },
   alert:          { icon: 'alert-circle',     color: '#F44336', bgLight: '#FFEBEE', bgDark: '#3a1b1b' },
@@ -122,7 +122,7 @@ export default function InsightsPage(): React.JSX.Element {
             style={[s.refreshBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
           >
             {refreshing ? (
-              <ActivityIndicator size="small" color="#4CAF50" />
+              <ActivityIndicator size="small" color="#7C3AED" />
             ) : (
               <Ionicons name="refresh-outline" size={18} color={colors.textSecondary} />
             )}
@@ -205,7 +205,7 @@ export default function InsightsPage(): React.JSX.Element {
 
         {refreshing && insights.length === 0 && (
           <View style={[s.generatingCard, { backgroundColor: colors.card }]}>
-            <ActivityIndicator size="small" color="#4CAF50" />
+            <ActivityIndicator size="small" color="#7C3AED" />
             <Text style={[s.generatingText, { color: colors.textSecondary }]}>
               Analyzing your data — this may take a few seconds…
             </Text>

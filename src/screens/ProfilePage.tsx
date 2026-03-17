@@ -176,8 +176,8 @@ export default function ProfilePage(): React.JSX.Element {
               {Math.round(kgToLbs(profile.weightKg))} lb
             </Text>
           )}
-          <View style={[s.calorieCard, { backgroundColor: isDark ? '#1b3a1b' : '#E8F5E9' }]}>
-            <Text style={[s.calorieValue, { color: isDark ? '#66BB6A' : '#2E7D32' }]}>{goals.calories}</Text>
+          <View style={[s.calorieCard, { backgroundColor: isDark ? '#1a1033' : '#EDE9FE' }]}>
+            <Text style={[s.calorieValue, { color: isDark ? '#A78BFA' : '#5B21B6' }]}>{goals.calories}</Text>
             <Text style={[s.calorieUnit, { color: colors.accent }]}>cal / day</Text>
           </View>
           <View style={s.macroRow}>
@@ -195,11 +195,11 @@ export default function ProfilePage(): React.JSX.Element {
             <Text style={[s.goalsTitle, { color: colors.text }]}>Your Plan</Text>
             {planExpanded && (
               <TouchableOpacity
-                style={[s.updatePlanBtn, { backgroundColor: isDark ? '#1b3a1b' : '#E8F5E9' }]}
+                style={[s.updatePlanBtn, { backgroundColor: isDark ? '#1a1033' : '#EDE9FE' }]}
                 onPress={() => setUpdatePlanVisible(true)}
                 activeOpacity={0.7}
               >
-                <Ionicons name="sparkles" size={14} color="#4CAF50" />
+                <Ionicons name="sparkles" size={14} color="#7C3AED" />
                 <Text style={s.updatePlanText}>Update</Text>
               </TouchableOpacity>
             )}
@@ -220,7 +220,7 @@ export default function ProfilePage(): React.JSX.Element {
             <Ionicons
               name={planExpanded ? 'chevron-up' : 'chevron-down'}
               size={16}
-              color="#4CAF50"
+              color="#7C3AED"
             />
           </TouchableOpacity>
         </View>
@@ -411,7 +411,7 @@ const s = StyleSheet.create({
   updatePlanText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#7C3AED',
   },
   planTextContainer: {
     marginTop: 10,
@@ -428,6 +428,6 @@ const s = StyleSheet.create({
   readMoreText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#7C3AED',
   },
 });

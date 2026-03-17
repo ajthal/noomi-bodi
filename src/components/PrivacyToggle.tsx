@@ -21,7 +21,7 @@ export default function PrivacyToggle({ isPrivate, onToggle }: PrivacyToggleProp
       <Switch
         value={isPrivate}
         onValueChange={onToggle}
-        trackColor={{ false: colors.inputBorder, true: '#4CAF50' }}
+        trackColor={{ false: colors.inputBorder, true: '#7C3AED' }}
         thumbColor="#fff"
       />
     </View>

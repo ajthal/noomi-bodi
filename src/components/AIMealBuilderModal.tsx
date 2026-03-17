@@ -176,8 +176,8 @@ export default function AIMealBuilderModal({ visible, onGenerated, onCancel }: P
                     style={[
                       s.tag,
                       {
-                        backgroundColor: active ? '#4CAF50' : colors.surface,
-                        borderColor: active ? '#4CAF50' : colors.border,
+                        backgroundColor: active ? '#7C3AED' : colors.surface,
+                        borderColor: active ? '#7C3AED' : colors.border,
                       },
                     ]}
                     onPress={() => toggleTag(tag.value)}
@@ -220,7 +220,7 @@ export default function AIMealBuilderModal({ visible, onGenerated, onCancel }: P
             <View style={[s.resultCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[s.resultName, { color: colors.text }]}>{result.mealData.name}</Text>
               <View style={s.macroRow}>
-                <MacroPill label="Cal" value={result.mealData.calories} color="#4CAF50" labelColor={colors.textSecondary} />
+                <MacroPill label="Cal" value={result.mealData.calories} color="#7C3AED" labelColor={colors.textSecondary} />
                 <MacroPill label="P" value={result.mealData.protein} unit="g" color="#2196F3" labelColor={colors.textSecondary} />
                 <MacroPill label="C" value={result.mealData.carbs} unit="g" color="#FF9800" labelColor={colors.textSecondary} />
                 <MacroPill label="F" value={result.mealData.fat} unit="g" color="#9C27B0" labelColor={colors.textSecondary} />
@@ -351,7 +351,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingVertical: 14,
     borderRadius: 12,
   },
