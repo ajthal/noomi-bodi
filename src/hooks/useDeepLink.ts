@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { Linking } from 'react-native';
 
-type DeepLinkAction = 'quick-log' | null;
+type DeepLinkAction = 'quick-log' | 'add-photo' | null;
 
 export function useDeepLink(onAction: (action: DeepLinkAction) => void) {
   const onActionRef = useRef(onAction);
@@ -9,7 +9,9 @@ export function useDeepLink(onAction: (action: DeepLinkAction) => void) {
 
   const handleURL = useCallback((url: string | null) => {
     if (!url) return;
-    if (url === 'noomibodi://quick-log') {
+    if (url === 'noomibodi://add-photo') {
+      onActionRef.current('add-photo');
+    } else if (url === 'noomibodi://quick-log') {
       onActionRef.current('quick-log');
     }
   }, []);

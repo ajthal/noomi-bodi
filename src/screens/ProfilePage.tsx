@@ -8,7 +8,8 @@ import {
   RefreshControl,
   StyleSheet,
 } from 'react-native';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import ThemedMarkdown from '../components/ThemedMarkdown';
@@ -72,50 +73,79 @@ export default function ProfilePage(): React.JSX.Element {
     fetchIfStale();
   }, [isFocused, fetchIfStale]);
 
+  const isStandaloneScreen = useRoute().name === 'ProfileScreen';
+
+  const headerBar = isStandaloneScreen ? (
+    <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background }}>
+      <View style={[s.headerBar, { borderBottomColor: colors.borderLight }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('SettingsScreen')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="settings-outline" size={22} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  ) : null;
+
   if (loading) {
     return (
-      <ScrollView
-        style={[s.container, { backgroundColor: colors.background }]}
-        contentContainerStyle={s.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={s.profileHeader}>
-          <SkeletonCircle size={100} />
-          <SkeletonText lines={2} lastLineWidth="50%" style={{ marginTop: 12, width: 100 }} />
-          <SkeletonText lines={1} lastLineWidth="40%" style={{ marginTop: 8, width: 80 }} />
-        </View>
-        <View style={s.statsGrid}>
-          <SkeletonCard style={{ flex: 1 }} height={80} />
-          <SkeletonCard style={{ flex: 1 }} height={80} />
-          <SkeletonCard style={{ flex: 1 }} height={80} />
-        </View>
-        <SkeletonCard height={100} />
-      </ScrollView>
+      <View style={[s.container, { backgroundColor: colors.background }]}>
+        {headerBar}
+        <ScrollView
+          style={[s.container, { backgroundColor: colors.background }]}
+          contentContainerStyle={s.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={s.profileHeader}>
+            <SkeletonCircle size={100} />
+            <SkeletonText lines={2} lastLineWidth="50%" style={{ marginTop: 12, width: 100 }} />
+            <SkeletonText lines={1} lastLineWidth="40%" style={{ marginTop: 8, width: 80 }} />
+          </View>
+          <View style={s.statsGrid}>
+            <SkeletonCard style={{ flex: 1 }} height={80} />
+            <SkeletonCard style={{ flex: 1 }} height={80} />
+            <SkeletonCard style={{ flex: 1 }} height={80} />
+          </View>
+          <SkeletonCard height={100} />
+        </ScrollView>
+      </View>
     );
   }
 
   if (loadError && !profile) {
     return (
-      <ErrorState message={loadError} onRetry={() => loadData(false)} />
+      <View style={[s.container, { backgroundColor: colors.background }]}>
+        {headerBar}
+        <ErrorState message={loadError} onRetry={() => loadData(false)} />
+      </View>
     );
   }
 
   const goals: MacroGoals | null = profile ? estimateDailyGoals(profile) : null;
 
   return (
-    <ScrollView
-      style={[s.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={s.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={forceFetch}
-          tintColor={colors.accent}
-          colors={[colors.accent]}
-        />
-      }
-    >
+    <View style={[s.container, { backgroundColor: colors.background }]}>
+      {headerBar}
+      <ScrollView
+        style={[s.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={forceFetch}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
+      >
       {/* Profile header */}
       <View style={s.profileHeader}>
         {profile?.profilePictureUrl ? (
@@ -233,7 +263,8 @@ export default function ProfilePage(): React.JSX.Element {
           if (profile) setProfile({ ...profile, plan: newPlan });
         }}
       />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -262,6 +293,14 @@ function MacroPill({
 const s = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   content: {
     padding: 20,

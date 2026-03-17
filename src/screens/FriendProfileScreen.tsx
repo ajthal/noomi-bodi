@@ -20,6 +20,8 @@ import {
   removeFriend,
   RelationshipStatus,
 } from '../services/friendships';
+import { getFriendStats, FriendStats } from '../services/reportData';
+import { kgToLbs } from '../utils/units';
 
 interface FriendProfileScreenProps {
   route: any;
@@ -34,15 +36,18 @@ export default function FriendProfileScreen({ route, navigation }: FriendProfile
   const [loading, setLoading] = useState(true);
   const [relationship, setRelationship] = useState<RelationshipStatus>('none');
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
+  const [stats, setStats] = useState<FriendStats | null>(null);
 
   useEffect(() => {
     Promise.all([
       getPublicProfile(userId),
       getFriendshipStatus(userId),
-    ]).then(([p, fs]) => {
+      getFriendStats(userId),
+    ]).then(([p, fs, friendStats]) => {
       setProfile(p);
       setRelationship(fs.status);
       setFriendshipId(fs.friendshipId);
+      setStats(friendStats);
       setLoading(false);
     });
   }, [userId]);
@@ -89,7 +94,14 @@ export default function FriendProfileScreen({ route, navigation }: FriendProfile
             <SkeletonText lines={1} lastLineWidth="30%" style={s.skeletonDisplayName} />
             <SkeletonText lines={2} lastLineWidth="70%" style={s.skeletonBio} />
           </View>
-          <SkeletonCard height={60} style={s.skeletonCard} />
+          <View style={s.statsGrid}>
+            <SkeletonCard style={{ flex: 1 }} height={80} />
+            <SkeletonCard style={{ flex: 1 }} height={80} />
+            <SkeletonCard style={{ flex: 1 }} height={80} />
+          </View>
+          <SkeletonCard height={90} style={{ marginBottom: 12 }} />
+          <SkeletonCard height={70} style={{ marginBottom: 12 }} />
+          <SkeletonCard height={70} style={{ marginBottom: 12 }} />
         </View>
       </SafeAreaView>
     );
@@ -150,6 +162,124 @@ export default function FriendProfileScreen({ route, navigation }: FriendProfile
             </View>
           )}
         </View>
+
+        {/* Stats card — only for accepted, non-private friends */}
+        {relationship === 'accepted' && !profile.isPrivate && stats && (
+          <View style={s.statsGrid}>
+            <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={s.statEmoji}>{'\uD83D\uDD25'}</Text>
+              <Text style={[s.statValue, { color: colors.text }]}>{stats.streak}</Text>
+              <Text style={[s.statLabel, { color: colors.textSecondary }]}>Day Streak</Text>
+            </View>
+            <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={s.statEmoji}>{'\uD83D\uDCC5'}</Text>
+              <Text style={[s.statValue, { color: colors.text }]}>{stats.daysTracked}</Text>
+              <Text style={[s.statLabel, { color: colors.textSecondary }]}>Days Tracked</Text>
+            </View>
+            <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={s.statEmoji}>{'\uD83C\uDFAF'}</Text>
+              <Text style={[s.statValue, { color: colors.text }]}>{stats.adherencePct}%</Text>
+              <Text style={[s.statLabel, { color: colors.textSecondary }]}>This Week</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Plan summary */}
+        {relationship === 'accepted' && !profile.isPrivate && stats?.goalCalories && (
+          <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={s.infoCardHeader}>
+              <Ionicons name="nutrition-outline" size={18} color={colors.accent} />
+              <Text style={[s.infoCardTitle, { color: colors.text }]}>Plan</Text>
+            </View>
+            <Text style={[s.planGoalType, { color: colors.accent }]}>
+              Goal: {stats.goalType === 'lose' ? 'Lose weight' : stats.goalType === 'gain' ? 'Gain weight' : 'Maintain weight'}
+            </Text>
+            <View style={s.planMacroRow}>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.goalCalories} cal
+              </Text>
+              <Text style={[s.planMacroDot, { color: colors.border }]}>{'\u00B7'}</Text>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.goalProtein}g P
+              </Text>
+              <Text style={[s.planMacroDot, { color: colors.border }]}>{'\u00B7'}</Text>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.goalCarbs}g C
+              </Text>
+              <Text style={[s.planMacroDot, { color: colors.border }]}>{'\u00B7'}</Text>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.goalFat}g F
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Weight progress */}
+        {relationship === 'accepted' && !profile.isPrivate && stats?.currentWeightKg != null && (
+          <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={s.infoCardHeader}>
+              <Ionicons name="scale-outline" size={18} color="#9C27B0" />
+              <Text style={[s.infoCardTitle, { color: colors.text }]}>Weight Progress</Text>
+            </View>
+            <View style={s.weightRow}>
+              {stats.startWeightKg != null && (
+                <View style={s.weightItem}>
+                  <Text style={[s.weightItemLabel, { color: colors.textSecondary }]}>Start</Text>
+                  <Text style={[s.weightItemValue, { color: colors.text }]}>
+                    {Math.round(kgToLbs(stats.startWeightKg) * 10) / 10} lbs
+                  </Text>
+                </View>
+              )}
+              <View style={s.weightItem}>
+                <Text style={[s.weightItemLabel, { color: colors.textSecondary }]}>Current</Text>
+                <Text style={[s.weightItemValue, { color: colors.text }]}>
+                  {Math.round(kgToLbs(stats.currentWeightKg) * 10) / 10} lbs
+                </Text>
+              </View>
+              {stats.weightChangeKg != null && (
+                <View style={s.weightItem}>
+                  <Text style={[s.weightItemLabel, { color: colors.textSecondary }]}>Change</Text>
+                  <Text style={[
+                    s.weightItemValue,
+                    { color: stats.weightChangeKg < 0 ? '#4CAF50' : stats.weightChangeKg > 0 ? '#FF9800' : colors.text },
+                  ]}>
+                    {stats.weightChangeKg > 0 ? '+' : ''}{Math.round(kgToLbs(stats.weightChangeKg) * 10) / 10} lbs
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Average daily macros */}
+        {relationship === 'accepted' && !profile.isPrivate && stats && stats.avgDays > 0 && (
+          <View style={[s.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={s.infoCardHeader}>
+              <Ionicons name="pie-chart-outline" size={18} color="#2196F3" />
+              <Text style={[s.infoCardTitle, { color: colors.text }]}>Avg Daily Intake</Text>
+              <Text style={[s.infoCardSubtitle, { color: colors.textTertiary }]}>
+                last {stats.avgDays} day{stats.avgDays !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <View style={s.planMacroRow}>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.avgCalories} cal
+              </Text>
+              <Text style={[s.planMacroDot, { color: colors.border }]}>{'\u00B7'}</Text>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.avgProtein}g P
+              </Text>
+              <Text style={[s.planMacroDot, { color: colors.border }]}>{'\u00B7'}</Text>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.avgCarbs}g C
+              </Text>
+              <Text style={[s.planMacroDot, { color: colors.border }]}>{'\u00B7'}</Text>
+              <Text style={[s.planMacro, { color: colors.textSecondary }]}>
+                {stats.avgFat}g F
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Privacy notice */}
         {profile.isPrivate && relationship === 'accepted' && (
@@ -264,6 +394,84 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#7C3AED',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  statEmoji: {
+    fontSize: 22,
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  infoCard: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  infoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  infoCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  infoCardSubtitle: {
+    fontSize: 11,
+    marginLeft: 'auto' as any,
+  },
+  planGoalType: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  planMacroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  planMacro: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  planMacroDot: {
+    fontSize: 13,
+  },
+  weightRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  weightItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  weightItemLabel: {
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  weightItemValue: {
+    fontSize: 16,
+    fontWeight: '700',
   },
   privacyNotice: {
     flexDirection: 'row',

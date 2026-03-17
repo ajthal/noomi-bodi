@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -13,10 +13,14 @@ import { ImpersonationProvider, useImpersonation } from './src/contexts/Imperson
 import ImpersonationBanner from './src/components/ImpersonationBanner';
 import { OfflineBanner } from './src/components/OfflineBanner';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import ChatTabScreen from './src/screens/ChatTabScreen';
-import MealsTabScreen from './src/screens/MealsTabScreen';
-import ReportsTabScreen from './src/screens/ReportsTabScreen';
-import ProfileTabScreen from './src/screens/ProfileTabScreen';
+import TopBar from './src/components/TopBar';
+import SubTabBar, { type SubTabIcon } from './src/components/SubTabBar';
+import CustomBottomTabBar from './src/components/CustomBottomTabBar';
+import QuickLogPage from './src/screens/QuickLogPage';
+import MealsScreen from './src/screens/MealsScreen';
+import SharedMealsPage from './src/screens/SharedMealsPage';
+import ReportsScreen from './src/screens/ReportsScreen';
+import InsightsPage from './src/screens/InsightsPage';
 import SocialScreen from './src/screens/SocialScreen';
 import AdminDashboard from './src/screens/AdminDashboard';
 import OnboardingScreen from './src/screens/OnboardingScreen';
@@ -24,6 +28,9 @@ import SignInScreen from './src/screens/SignInScreen';
 import EmailVerificationScreen from './src/screens/EmailVerificationScreen';
 import EditProfileScreen from './src/screens/EditProfileScreen';
 import FriendProfileScreen from './src/screens/FriendProfileScreen';
+import ProfilePage from './src/screens/ProfilePage';
+import SettingsPage from './src/screens/SettingsPage';
+import ChatScreen from './src/screens/ChatScreen';
 import { loadUserProfile, clearUserProfile, clearMessages } from './src/services/storage';
 import { clearAllSavedMeals } from './src/services/savedMeals';
 import { clearOfflineData } from './src/services/offlineStore';
@@ -34,52 +41,131 @@ import { getUserRole, type UserRole } from './src/utils/roleCheck';
 
 const ONBOARDING_COMPLETE_KEY = '@noomibodi_onboarding_complete';
 
-const Tab = createBottomTabNavigator();
+const Tab = createMaterialTopTabNavigator();
 const RootStack = createNativeStackNavigator();
+
+// ── Tab group definitions ───────────────────────────────────────────
+interface TabGroupDef {
+  group: string;
+  screens: string[];
+}
+
+const STANDARD_GROUPS: TabGroupDef[] = [
+  { group: 'Home', screens: ['Home'] },
+  { group: 'Meals', screens: ['MyMeals', 'SharedMeals'] },
+  { group: 'Reports', screens: ['Reports', 'Insights'] },
+  { group: 'Social', screens: ['Social'] },
+];
+const ADMIN_GROUP: TabGroupDef = { group: 'Admin', screens: ['Admin'] };
+
+const MEALS_ICONS: SubTabIcon[] = [
+  { name: 'restaurant' },
+  { name: 'share-social' },
+];
+
+const REPORTS_ICONS: SubTabIcon[] = [
+  { name: 'stats-chart' },
+  { name: 'sparkles' },
+];
 
 function MainTabs({ showAdmin }: { showAdmin: boolean }) {
   const { colors } = useTheme();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const tabNavRef = React.useRef<any>(null);
+
+  const groups = useMemo(
+    () => (showAdmin ? [...STANDARD_GROUPS, ADMIN_GROUP] : STANDARD_GROUPS),
+    [showAdmin],
+  );
+
+  const allScreens = useMemo(() => groups.flatMap(g => g.screens), [groups]);
+
+  const activeGroup = useMemo(() => {
+    const screenName = allScreens[currentIndex] ?? allScreens[0];
+    return groups.find(g => g.screens.includes(screenName))?.group ?? 'Home';
+  }, [currentIndex, allScreens, groups]);
+
+  const subTabConfig = useMemo(() => {
+    const g = groups.find(gr => gr.group === activeGroup);
+    if (!g || g.screens.length <= 1) return null;
+    const groupStartIndex = allScreens.indexOf(g.screens[0]);
+    const activeSubIndex = currentIndex - groupStartIndex;
+    if (activeGroup === 'Meals') {
+      const icons = MEALS_ICONS.map((icon, i) =>
+        i === 1 ? { ...icon, badge: unreadCount > 0 } : icon,
+      );
+      return { icons, activeSubIndex, groupStartIndex };
+    }
+    if (activeGroup === 'Reports') {
+      return { icons: REPORTS_ICONS, activeSubIndex, groupStartIndex };
+    }
+    return null;
+  }, [activeGroup, currentIndex, allScreens, groups, unreadCount]);
+
+  const jumpTo = useCallback(
+    (screenName: string) => {
+      tabNavRef.current?.jumpTo(screenName);
+    },
+    [],
+  );
+
+  const handleBottomTabPress = useCallback(
+    (groupKey: string) => {
+      const g = groups.find(gr => gr.group === groupKey);
+      if (g) jumpTo(g.screens[0]);
+    },
+    [groups, jumpTo],
+  );
+
+  const handleSubTabPress = useCallback(
+    (subIndex: number) => {
+      if (!subTabConfig) return;
+      const screenName = allScreens[subTabConfig.groupStartIndex + subIndex];
+      if (screenName) jumpTo(screenName);
+    },
+    [subTabConfig, allScreens, jumpTo],
+  );
+
+  const handleUnreadCount = useCallback((count: number) => {
+    setUnreadCount(count);
+  }, []);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <TopBar />
+      {subTabConfig && (
+        <SubTabBar
+          icons={subTabConfig.icons}
+          activeIndex={subTabConfig.activeSubIndex}
+          onPress={handleSubTabPress}
+        />
+      )}
       <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          tabBarIcon: ({ color, size, focused }) => {
-            let iconName: string;
-
-            if (route.name === 'Home') {
-              iconName = focused ? 'home' : 'home-outline';
-            } else if (route.name === 'Meals') {
-              iconName = focused ? 'restaurant' : 'restaurant-outline';
-            } else if (route.name === 'Reports') {
-              iconName = focused ? 'stats-chart' : 'stats-chart-outline';
-            } else if (route.name === 'Social') {
-              iconName = focused ? 'people' : 'people-outline';
-            } else if (route.name === 'Admin') {
-              iconName = focused ? 'shield-checkmark' : 'shield-checkmark-outline';
-            } else {
-              iconName = focused ? 'person' : 'person-outline';
-            }
-
-            return <Ionicons name={iconName} size={size} color={color} />;
-          },
-          tabBarActiveTintColor: colors.tabBarActive,
-          tabBarInactiveTintColor: colors.tabBarInactive,
-          tabBarStyle: {
-            backgroundColor: colors.tabBarBg,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: colors.tabBarBorder,
-          },
-        })}
+        tabBar={({ navigation: innerNav, state: innerState }) => {
+          tabNavRef.current = innerNav;
+          if (innerState.index !== currentIndex) {
+            requestAnimationFrame(() => setCurrentIndex(innerState.index));
+          }
+          return null;
+        }}
+        screenOptions={{ lazy: true }}
       >
-        <Tab.Screen name="Home" component={ChatTabScreen} />
-        <Tab.Screen name="Meals" component={MealsTabScreen} />
-        <Tab.Screen name="Reports" component={ReportsTabScreen} />
+        <Tab.Screen name="Home" component={QuickLogPage} />
+        <Tab.Screen name="MyMeals" component={MealsScreen} />
+        <Tab.Screen name="SharedMeals">
+          {() => <SharedMealsPage onUnreadCountChange={handleUnreadCount} />}
+        </Tab.Screen>
+        <Tab.Screen name="Reports" component={ReportsScreen} />
+        <Tab.Screen name="Insights" component={InsightsPage} />
         <Tab.Screen name="Social" component={SocialScreen} />
-        <Tab.Screen name="Profile" component={ProfileTabScreen} />
         {showAdmin && <Tab.Screen name="Admin" component={AdminDashboard} />}
       </Tab.Navigator>
+      <CustomBottomTabBar
+        activeGroup={activeGroup}
+        onTabPress={handleBottomTabPress}
+        showAdmin={showAdmin}
+      />
     </SafeAreaView>
   );
 }
@@ -266,6 +352,9 @@ function AppInner() {
                 }}
               />
               <RootStack.Screen name="FriendProfile" component={FriendProfileScreen} />
+              <RootStack.Screen name="ProfileScreen" component={ProfilePage} />
+              <RootStack.Screen name="SettingsScreen" component={SettingsPage} />
+              <RootStack.Screen name="ChatScreen" component={ChatScreen} />
             </>
           )}
           {screen === 'emailVerification' && (

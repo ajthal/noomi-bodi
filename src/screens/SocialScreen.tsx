@@ -9,7 +9,6 @@ import {
   StyleSheet,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -113,7 +112,7 @@ export default function SocialScreen(): React.JSX.Element {
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.loadingContainer, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[s.loadingContainer, { backgroundColor: colors.background }]}>
         <View style={s.content}>
           <SkeletonCard height={80} />
           <SkeletonCard height={80} />
@@ -127,20 +126,20 @@ export default function SocialScreen(): React.JSX.Element {
           <SkeletonRow />
           <SkeletonRow />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (loadError && friends.length === 0) {
     return (
-      <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[s.container, { backgroundColor: colors.background }]}>
         <ErrorState message={loadError} onRetry={() => loadData(false)} />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={[s.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <Text style={[s.headerTitle, { color: colors.text }]}>Social</Text>
@@ -329,7 +328,7 @@ export default function SocialScreen(): React.JSX.Element {
         onClose={() => setAddFriendVisible(false)}
         onFriendAdded={loadData}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

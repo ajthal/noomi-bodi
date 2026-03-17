@@ -7,8 +7,11 @@ import {
   ScrollView,
   Alert,
   Pressable,
+  TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -104,13 +107,31 @@ export default function SettingsPage(): React.JSX.Element {
     );
   };
 
+  const navigation = useNavigation<any>();
+  const isStandaloneScreen = useRoute().name === 'SettingsScreen';
+
   return (
-    <ScrollView
-      style={[s.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={s.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Account */}
+    <View style={[s.container, { backgroundColor: colors.background }]}>
+      {isStandaloneScreen && (
+        <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background }}>
+          <View style={[s.headerBar, { borderBottomColor: colors.borderLight }]}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chevron-back" size={26} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[s.headerTitle, { color: colors.text }]}>Settings</Text>
+            <View style={{ width: 26 }} />
+          </View>
+        </SafeAreaView>
+      )}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Account */}
       {user && (
         <View style={s.section}>
           <Text style={[s.sectionTitle, { color: colors.text }]}>Account</Text>
@@ -188,14 +209,27 @@ export default function SettingsPage(): React.JSX.Element {
         </Text>
       </View>
 
-      {status ? <Text style={[s.statusText, { color: colors.accent }]}>{status}</Text> : null}
-    </ScrollView>
+        {status ? <Text style={[s.statusText, { color: colors.accent }]}>{status}</Text> : null}
+      </ScrollView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
   },
   content: {
     padding: 24,

@@ -13,6 +13,7 @@ import {
   TextInput,
   Pressable,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import {
@@ -50,10 +51,11 @@ import {
   DailyMacroTotals,
 } from '../services/mealLog';
 import { saveMeal } from '../services/savedMeals';
-import { logWeight as logWeightApi } from '../services/reportData';
+import { logWeight as logWeightApi, getWeightLogs, WeightLog } from '../services/reportData';
 import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
-import { lbsToKg } from '../utils/units';
+import { lbsToKg, kgToLbs } from '../utils/units';
+import { LineChart } from 'react-native-chart-kit';
 import { useDayChange } from '../hooks/useDayChange';
 import { useDeepLink } from '../hooks/useDeepLink';
 import { useTheme } from '../contexts/ThemeContext';
@@ -85,13 +87,16 @@ interface PendingResult {
 }
 
 interface Props {
-  refreshTrigger: number;
-  onMealLogged: () => void;
+  refreshTrigger?: number;
+  onMealLogged?: () => void;
 }
 
 // ── Component ────────────────────────────────────────────────────────
 
-export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): React.JSX.Element {
+export default function QuickLogPage({
+  refreshTrigger = 0,
+  onMealLogged = () => {},
+}: Props): React.JSX.Element {
   const { colors, isDark } = useTheme();
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -109,7 +114,9 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
   const [loggingWeight, setLoggingWeight] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [weekWeights, setWeekWeights] = useState<WeightLog[]>([]);
   const isFocused = useIsFocused();
+  const { width: screenWidth } = useWindowDimensions();
 
   // ── Data loading ──────────────────────────────────────────────────
 
@@ -117,17 +124,19 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
     if (isRefresh) setRefreshing(true);
     setLoadError(null);
     try {
-      const [key, prof, meals, daily] = await Promise.all([
+      const [key, prof, meals, daily, ww] = await Promise.all([
         getApiKey(),
         loadUserProfile(),
         getTodaysMeals(),
         getDailyTotals(),
+        getWeightLogs(7),
       ]);
       setApiKey(key);
       setProfile(prof);
       if (prof) setGoals(estimateDailyGoals(prof));
       setTodaysMeals(meals);
       setTotals(daily);
+      setWeekWeights(ww);
     } catch (e) {
       console.error('QuickLogPage refresh error:', e);
       setLoadError(getUserFriendlyError(e));
@@ -233,7 +242,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
   }, [apiKey, handleImageResult]);
 
   useDeepLink(useCallback((action) => {
-    if (action === 'quick-log' && apiKey) {
+    if ((action === 'quick-log' || action === 'add-photo') && apiKey) {
       launchCamera(IMAGE_PICKER_OPTIONS, handleImageResult);
     }
   }, [apiKey, handleImageResult]));
@@ -311,6 +320,8 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
     try {
       await logWeightApi(lbsToKg(val));
       setWeightInput('');
+      const updatedWeights = await getWeightLogs(7);
+      setWeekWeights(updatedWeights);
       Alert.alert('Weight Logged', `${val} lbs recorded.`);
     } catch {
       Alert.alert('Error', 'Could not log weight.');
@@ -380,60 +391,78 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
           </View>
         )}
 
-        {/* Add Meal Button */}
-        <TouchableOpacity
-          style={[s.addButton, (analyzing || !apiKey) && s.addButtonDisabled]}
-          onPress={handleAddPhoto}
-          disabled={analyzing || !apiKey}
-          activeOpacity={0.7}
-        >
-          {analyzing ? (
-            <>
-              <ActivityIndicator size="small" color="#fff" />
-              <Text style={s.addButtonText}>Analyzing meal...</Text>
-            </>
-          ) : (
-            <>
-              <Ionicons name="camera-outline" size={22} color="#fff" />
-              <Text style={s.addButtonText}>Add Meal Photo</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
         {!apiKey && (
           <Text style={[s.hintText, { color: colors.error }]}>
             Add your Claude API key in the Profile tab to get started.
           </Text>
         )}
 
-        {/* Weight log (inline) */}
-        <View style={[s.weightRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          <Ionicons name="scale-outline" size={14} color={colors.textTertiary} />
-          <TextInput
-            style={[s.weightInput, { color: colors.text }]}
-            placeholder="Log weight (lbs)"
-            placeholderTextColor={colors.textTertiary}
-            keyboardType="decimal-pad"
-            value={weightInput}
-            onChangeText={setWeightInput}
-          />
-          <Pressable
-            style={[s.weightBtn, loggingWeight && { opacity: 0.5 }]}
-            onPress={handleLogWeight}
-            disabled={loggingWeight}
-          >
-            {loggingWeight ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={s.weightBtnText}>Log</Text>
-            )}
-          </Pressable>
-        </View>
+        {/* Weight section */}
+        <View style={s.weightSection}>
+          <View style={s.weightSectionHeader}>
+            <Ionicons name="scale-outline" size={18} color={colors.accent} />
+            <Text style={[s.weightSectionTitle, { color: colors.text }]}>Weight</Text>
+          </View>
 
-        {/* Smart Recommendations */}
-        {apiKey && goals && !pendingResult && (
-          <SmartRecommendations onMealLogged={() => { refresh(); onMealLogged(); }} />
-        )}
+          {weekWeights.length > 0 && (
+            <View style={[s.weightChartCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <LineChart
+                data={{
+                  labels: weekWeights.map(w => {
+                    const d = new Date(w.loggedAt);
+                    return `${d.getMonth() + 1}/${d.getDate()}`;
+                  }),
+                  datasets: [{ data: weekWeights.map(w => Math.round(kgToLbs(w.weightKg) * 10) / 10) }],
+                }}
+                width={screenWidth - 52}
+                height={180}
+                yAxisSuffix=""
+                yAxisLabel=""
+                formatYLabel={(v) => `${v} lbs`}
+                segments={3}
+                chartConfig={{
+                  backgroundGradientFrom: colors.surface,
+                  backgroundGradientTo: colors.surface,
+                  decimalPlaces: 1,
+                  color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`,
+                  labelColor: (opacity = 1) => isDark ? `rgba(200,200,200,${opacity})` : `rgba(0,0,0,${opacity})`,
+                  propsForBackgroundLines: { stroke: colors.border, strokeDasharray: '4 4' },
+                  propsForLabels: { fontSize: 10 },
+                }}
+                bezier
+                withInnerLines
+                withOuterLines={false}
+                style={{ borderRadius: 12, marginLeft: -8 }}
+              />
+              <Text style={[s.weekAvgText, { color: colors.textSecondary }]}>
+                Weekly avg: {(weekWeights.reduce((sum, w) => sum + kgToLbs(w.weightKg), 0) / weekWeights.length).toFixed(1)} lbs
+              </Text>
+            </View>
+          )}
+
+          <View style={[s.weightRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <Ionicons name="scale-outline" size={14} color={colors.textTertiary} />
+            <TextInput
+              style={[s.weightInput, { color: colors.text }]}
+              placeholder="Log weight (lbs)"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="decimal-pad"
+              value={weightInput}
+              onChangeText={setWeightInput}
+            />
+            <Pressable
+              style={[s.weightBtn, loggingWeight && { opacity: 0.5 }]}
+              onPress={handleLogWeight}
+              disabled={loggingWeight}
+            >
+              {loggingWeight ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={s.weightBtnText}>Log</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
 
         {/* Analysis Result Card */}
         {pendingResult && (
@@ -517,6 +546,9 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
         {/* Today's Meals */}
         <View style={s.mealsSection}>
           <Text style={[s.mealsSectionTitle, { color: colors.text }]}>Today's Meals</Text>
+          {apiKey && goals && !pendingResult && (
+            <SmartRecommendations onMealLogged={() => { refresh(); onMealLogged(); }} />
+          )}
           {todaysMeals.length === 0 && !pendingResult && (
             <EmptyState
               icon="restaurant-outline"
@@ -561,6 +593,27 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
             })}
         </View>
       </ScrollView>
+
+      <View style={[s.stickyButtonWrap, { backgroundColor: colors.background }]}>
+        <TouchableOpacity
+          style={[s.addButton, (analyzing || !apiKey) && s.addButtonDisabled]}
+          onPress={handleAddPhoto}
+          disabled={analyzing || !apiKey}
+          activeOpacity={0.7}
+        >
+          {analyzing ? (
+            <>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={s.addButtonText}>Analyzing meal...</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="camera-outline" size={22} color="#fff" />
+              <Text style={s.addButtonText}>Add Meal Photo</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {pendingResult && (
         <EditMealModal
@@ -633,7 +686,12 @@ const s = StyleSheet.create({
     paddingBottom: 10,
   },
 
-  // Add button
+  // Sticky add button
+  stickyButtonWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -657,11 +715,37 @@ const s = StyleSheet.create({
     marginTop: 8,
   },
 
-  // Weight log
+  // Weight section
+  weightSection: {
+    marginTop: 16,
+  },
+  weightSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  weightSectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  weightChartCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingTop: 10,
+    paddingBottom: 10,
+    paddingHorizontal: 6,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  weekAvgText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   weightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
