@@ -20,6 +20,25 @@ export interface OverviewStats {
   daysTracked: number;
 }
 
+export interface FriendStats {
+  streak: number;
+  daysTracked: number;
+  adherencePct: number;
+  goalType: string | null;
+  goalCalories: number | null;
+  goalProtein: number | null;
+  goalCarbs: number | null;
+  goalFat: number | null;
+  startWeightKg: number | null;
+  currentWeightKg: number | null;
+  weightChangeKg: number | null;
+  avgCalories: number;
+  avgProtein: number;
+  avgCarbs: number;
+  avgFat: number;
+  avgDays: number;
+}
+
 export interface WeightLog {
   id: string;
   weightKg: number;
@@ -168,12 +187,24 @@ export async function getWeightLogs(days?: number): Promise<WeightLog[]> {
   }));
 }
 
-/** Insert a new weight entry. Falls back to offline queue on network error. */
+/** Insert or overwrite today's weight entry. Falls back to offline queue on network error. */
 export async function logWeight(weightKg: number): Promise<void> {
   const userId = await getUserId();
   if (!userId) throw new Error('Not authenticated');
 
   try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+
+    await supabase
+      .from('weight_logs')
+      .delete()
+      .eq('user_id', userId)
+      .gte('logged_at', todayStart.toISOString())
+      .lt('logged_at', tomorrowStart.toISOString());
+
     const { error } = await supabase
       .from('weight_logs')
       .insert({ user_id: userId, weight_kg: weightKg });
@@ -192,4 +223,28 @@ export async function logWeight(weightKg: number): Promise<void> {
     }
     throw err;
   }
+}
+
+/** Fetch stats for an accepted, non-private friend via server-side RPC. */
+export async function getFriendStats(friendId: string): Promise<FriendStats | null> {
+  const { data, error } = await supabase.rpc('get_friend_stats', { p_friend_id: friendId });
+  if (error || !data) return null;
+  return {
+    streak: data.streak ?? 0,
+    daysTracked: data.days_tracked ?? 0,
+    adherencePct: data.adherence_pct ?? 0,
+    goalType: data.goal_type ?? null,
+    goalCalories: data.goal_calories ?? null,
+    goalProtein: data.goal_protein ?? null,
+    goalCarbs: data.goal_carbs ?? null,
+    goalFat: data.goal_fat ?? null,
+    startWeightKg: data.start_weight_kg ?? null,
+    currentWeightKg: data.current_weight_kg ?? null,
+    weightChangeKg: data.weight_change_kg ?? null,
+    avgCalories: data.avg_calories ?? 0,
+    avgProtein: data.avg_protein ?? 0,
+    avgCarbs: data.avg_carbs ?? 0,
+    avgFat: data.avg_fat ?? 0,
+    avgDays: data.avg_days ?? 0,
+  };
 }

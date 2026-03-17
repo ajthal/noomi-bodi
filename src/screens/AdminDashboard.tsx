@@ -10,9 +10,9 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+import { LineChart, PieChart } from 'react-native-chart-kit';
+import CustomBarChart from '../components/CustomBarChart';
 import { useTheme } from '../contexts/ThemeContext';
 import { useImpersonation } from '../contexts/ImpersonationContext';
 import ImpersonateModal from '../components/ImpersonateModal';
@@ -223,32 +223,32 @@ export default function AdminDashboard(): React.JSX.Element {
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[s.container, { backgroundColor: colors.background }]}>
         <View style={[s.header, { borderBottomColor: colors.border }]}>
           <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
         </View>
         <View style={s.centerState}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[s.container, { backgroundColor: colors.background }]}>
         <View style={[s.header, { borderBottomColor: colors.border }]}>
           <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
         </View>
         <View style={s.centerState}>
           <ErrorState message={error} onRetry={onRefresh} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={[s.container, { backgroundColor: colors.background }]}>
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -512,17 +512,14 @@ export default function AdminDashboard(): React.JSX.Element {
                 Tokens / Day (last 14d)
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <BarChart
-                  data={tokensBarData}
+                <CustomBarChart
+                  labels={tokensBarData.labels}
+                  data={tokensBarData.datasets[0].data}
                   width={Math.max(chartWidth, tokensBarData.labels.length * 50)}
                   height={180}
-                  chartConfig={chartConfig}
-                  withInnerLines={false}
-                  fromZero
-                  showBarTops={false}
-                  style={{ borderRadius: 12 }}
-                  yAxisLabel=""
-                  yAxisSuffix=""
+                  barColor={colors.accent}
+                  labelColor={colors.textSecondary}
+                  gridColor={colors.border}
                 />
               </ScrollView>
             </View>
@@ -761,7 +758,7 @@ export default function AdminDashboard(): React.JSX.Element {
       </Modal>
 
       <ImpersonateModal visible={impersonateVisible} onClose={() => setImpersonateVisible(false)} />
-    </SafeAreaView>
+    </View>
   );
 }
 

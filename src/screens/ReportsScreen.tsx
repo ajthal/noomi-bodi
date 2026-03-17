@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
+import { LineChart, PieChart } from 'react-native-chart-kit';
+import CustomBarChart from '../components/CustomBarChart';
 import {
   DailySummary,
   OverviewStats,
@@ -164,10 +165,12 @@ export default function ReportsScreen(): React.JSX.Element {
     const avgP = summaries.reduce((a, s) => a + s.protein, 0) / n;
     const avgC = summaries.reduce((a, s) => a + s.carbs, 0) / n;
     const avgF = summaries.reduce((a, s) => a + s.fat, 0) / n;
+    const total = avgP + avgC + avgF;
+    const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0;
     return [
-      { name: 'Protein', grams: Math.round(avgP), color: PIE_COLORS[0], legendFontColor: colors.text, legendFontSize: 13 },
-      { name: 'Carbs', grams: Math.round(avgC), color: PIE_COLORS[1], legendFontColor: colors.text, legendFontSize: 13 },
-      { name: 'Fat', grams: Math.round(avgF), color: PIE_COLORS[2], legendFontColor: colors.text, legendFontSize: 13 },
+      { name: `Protein ${pct(avgP)}%`, grams: Math.round(avgP), color: PIE_COLORS[0], legendFontColor: colors.text, legendFontSize: 13 },
+      { name: `Carbs ${pct(avgC)}%`, grams: Math.round(avgC), color: PIE_COLORS[1], legendFontColor: colors.text, legendFontSize: 13 },
+      { name: `Fat ${pct(avgF)}%`, grams: Math.round(avgF), color: PIE_COLORS[2], legendFontColor: colors.text, legendFontSize: 13 },
     ];
   };
 
@@ -191,14 +194,49 @@ export default function ReportsScreen(): React.JSX.Element {
 
   const weightChartData = () => {
     if (weights.length === 0) return null;
-    const labels = weights.map(w => {
+    const allLabels = weights.map(w => {
       const d = new Date(w.loggedAt);
       return `${d.getMonth() + 1}/${d.getDate()}`;
     });
-    return {
-      labels,
-      datasets: [{ data: weights.map(w => Math.round(kgToLbs(w.weightKg) * 10) / 10) }],
-    };
+    const maxLabels = Math.max(2, Math.floor(chartWidth / 60));
+    const skip = Math.max(1, Math.ceil(allLabels.length / maxLabels));
+    const labels = allLabels.map((l, i) => {
+      if (allLabels.length <= maxLabels) return l;
+      if (i === allLabels.length - 1) return l;
+      if (i % skip === 0) {
+        const nextShown = i + skip;
+        if (nextShown > allLabels.length - 1 && allLabels.length - 1 - i < skip * 0.6) return '';
+        return l;
+      }
+      return '';
+    });
+    const weightData = weights.map(w => Math.round(kgToLbs(w.weightKg) * 10) / 10);
+    const n = weightData.length;
+    const datasets: any[] = [
+      { data: weightData, color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`, strokeWidth: 2 },
+    ];
+
+    const startLbs = weightData[0];
+    datasets.push({
+      data: Array(n).fill(startLbs),
+      color: () => '#5599DD',
+      strokeWidth: 1,
+      strokeDashArray: [6, 4],
+      withDots: false,
+    });
+
+    const goalLbs = goalProj?.goalLbs;
+    if (goalLbs && goalLbs !== startLbs) {
+      datasets.push({
+        data: Array(n).fill(goalLbs),
+        color: () => '#FF9800',
+        strokeWidth: 1,
+        strokeDashArray: [6, 4],
+        withDots: false,
+      });
+    }
+
+    return { labels, datasets, legend: undefined };
   };
 
   const weightStats = () => {
@@ -342,20 +380,21 @@ export default function ReportsScreen(): React.JSX.Element {
       <Text style={[s.sectionTitle, { color: colors.text }]}>Calories</Text>
       {calData && calData.datasets[0].data.length > 0 ? (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
-          <BarChart
-            data={calData}
+          <CustomBarChart
+            labels={calData.labels}
+            data={calData.datasets[0].data}
             width={chartWidth}
             height={220}
-            yAxisLabel=""
-            yAxisSuffix=""
-            chartConfig={chartConfig}
-            fromZero
-            showValuesOnTopOfBars
-            style={s.chart}
+            barColor={colors.accent}
+            labelColor={colors.textSecondary}
+            gridColor={colors.border}
+            goalValue={goals?.calories}
+            goalColor="#FF9800"
+            goalLabel={goals ? `Goal ${goals.calories}` : undefined}
           />
           {goals && (
             <Text style={[s.goalLine, { color: colors.textSecondary }]}>
-              Goal: {goals.calories} kcal  ·  Hit {calGoal.hit}/{calGoal.total} days (
+              Hit {calGoal.hit}/{calGoal.total} days (
               {calGoal.total > 0 ? Math.round((calGoal.hit / calGoal.total) * 100) : 0}%)
             </Text>
           )}
@@ -365,9 +404,12 @@ export default function ReportsScreen(): React.JSX.Element {
       )}
 
       {/* ── Section 3: Macro Breakdown ────────────────────────────── */}
-      <Text style={[s.sectionTitle, { color: colors.text }]}>Macro Breakdown</Text>
+      <Text style={[s.sectionTitle, { color: colors.text }]}>Average Daily Macros</Text>
       {pieData.length > 0 ? (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
+          <Text style={[s.chartSubtitle, { color: colors.textSecondary }]}>
+            Avg grams per day over {summaries.length} day{summaries.length !== 1 ? 's' : ''}
+          </Text>
           <PieChart
             data={pieData}
             width={chartWidth}
@@ -396,7 +438,7 @@ export default function ReportsScreen(): React.JSX.Element {
 
       {/* ── Section 4: Weight Progress ────────────────────────────── */}
       <Text style={[s.sectionTitle, { color: colors.text }]}>Weight Progress</Text>
-      {wData && wData.datasets[0].data.length > 1 ? (
+      {wData && wData.datasets[0].data.length > 0 ? (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
           <LineChart
             data={wData}
@@ -411,6 +453,22 @@ export default function ReportsScreen(): React.JSX.Element {
             bezier
             style={s.chart}
           />
+          <View style={s.weightLegendRow}>
+            <View style={s.legendItem}>
+              <View style={[s.legendDash, { backgroundColor: '#5599DD' }]} />
+              <Text style={[s.legendLabel, { color: colors.textSecondary }]}>
+                Start {wStats?.startLbs} lbs
+              </Text>
+            </View>
+            {goalProj?.goalLbs != null && goalProj.goalLbs !== wStats?.startLbs && (
+              <View style={s.legendItem}>
+                <View style={[s.legendDash, { backgroundColor: '#FF9800' }]} />
+                <Text style={[s.legendLabel, { color: colors.textSecondary }]}>
+                  Goal {goalProj.goalLbs} lbs
+                </Text>
+              </View>
+            )}
+          </View>
           {wStats && (
             <View style={s.weightStatsRow}>
               <WeightStatPill colors={colors} isDark={isDark} label="Start" value={`${wStats.startLbs} lbs`} />
@@ -421,7 +479,7 @@ export default function ReportsScreen(): React.JSX.Element {
           )}
         </View>
       ) : (
-        <EmptyCard colors={colors} message={weights.length === 1 ? 'Log at least 2 weights to see a chart.' : 'No weight data yet.'} />
+        <EmptyCard colors={colors} message="No weight data yet." />
       )}
 
       {/* ── Section 5: Goal Projection ──────────────────────────── */}
@@ -675,6 +733,7 @@ const s = StyleSheet.create({
   },
   chart: { borderRadius: 12 },
   goalLine: { fontSize: 13, color: '#555', marginTop: 8, textAlign: 'center' },
+  chartSubtitle: { fontSize: 12, marginBottom: 4, textAlign: 'center' },
 
   // Macro pills
   macroPillRow: {
@@ -691,6 +750,28 @@ const s = StyleSheet.create({
     paddingVertical: 5,
   },
   macroPillText: { fontSize: 12, fontWeight: '600' },
+
+  // Weight legend
+  weightLegendRow: {
+    flexDirection: 'row',
+    gap: 16,
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  legendDash: {
+    width: 16,
+    height: 2,
+    borderRadius: 1,
+  },
+  legendLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
 
   // Weight stats
   weightStatsRow: {

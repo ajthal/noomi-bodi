@@ -511,6 +511,7 @@ All tables have RLS enabled with policies ensuring:
 
 - **`is_admin()`** — SECURITY DEFINER function that checks `profiles.role = 'admin'` for the current user. Bypasses RLS to avoid infinite recursion when used inside profile policies.
 - **`claim_device_token(p_fcm_token TEXT)`** — SECURITY DEFINER function that deletes `device_tokens` rows where `fcm_token` matches but `user_id` differs from the caller (`auth.uid()`). Called during token registration to prevent stale tokens from a previous user on the same device from receiving notifications meant for a different account.
+- **`get_friend_stats(p_friend_id UUID)`** — SECURITY DEFINER function returning a JSONB object with a friend's stats, plan, weight progress, and average macros. Verifies an accepted friendship exists between the caller and `p_friend_id`, and that the friend's profile is not private. Returns `null` if checks fail. Aggregates: streak, days tracked, weekly adherence, active plan (goal type, calories, macros), weight progress (start, current, change), and 7-day average calories/macros. See `docs/migrations/get_friend_stats.sql` for full implementation.
 
 ### Roles
 

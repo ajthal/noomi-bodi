@@ -169,10 +169,23 @@ export async function flushQueue(): Promise<{ synced: number; failed: number }> 
         });
         if (error) throw error;
       } else if (item.type === 'weight') {
+        const loggedAt = new Date(item.createdAt);
+        const dayStart = new Date(loggedAt);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+
+        await supabase
+          .from('weight_logs')
+          .delete()
+          .eq('user_id', userId)
+          .gte('logged_at', dayStart.toISOString())
+          .lt('logged_at', dayEnd.toISOString());
+
         const { error } = await supabase.from('weight_logs').insert({
           user_id: userId,
           weight_kg: item.payload.weightKg,
-          logged_at: new Date(item.createdAt).toISOString(),
+          logged_at: loggedAt.toISOString(),
         });
         if (error) throw error;
       }

@@ -10,7 +10,6 @@ import {
   StyleSheet,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -364,7 +363,7 @@ export default function MealsScreen(): React.JSX.Element {
   }
 
   return (
-    <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={[s.container, { backgroundColor: colors.background }]}>
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <Text style={[s.headerTitle, { color: colors.text }]}>Saved Meals</Text>
         <View style={s.headerActions}>
@@ -560,7 +559,7 @@ export default function MealsScreen(): React.JSX.Element {
         onClose={() => { setFriendPickerVisible(false); setSharingMealId(null); }}
         onSend={handleShareSend}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -12,7 +12,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ChatInputBox, { type PendingImage } from '../components/ChatInputBox';
 import ThemedMarkdown from '../components/ThemedMarkdown';
@@ -31,7 +31,6 @@ import {
 import {
   saveMessages,
   loadMessages,
-  clearMessages,
   Message,
   MealData,
   getApiKey,
@@ -170,6 +169,8 @@ export default function ChatScreen({
   onMealLogged,
 }: ChatScreenProps): React.JSX.Element {
   const { colors } = useTheme();
+  const navigation = useNavigation<any>();
+  const routeName = useRoute().name;
 
 
 
@@ -376,22 +377,6 @@ export default function ChatScreen({
     }
   };
 
-  // ── Clear chat ─────────────────────────────────────────────────────
-
-  const handleClearChat = () => {
-    Alert.alert('Clear Chat', 'Are you sure you want to clear all messages?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear',
-        style: 'destructive',
-        onPress: async () => {
-          await clearMessages();
-          setMessages([]);
-        },
-      },
-    ]);
-  };
-
   // ── Render helpers ─────────────────────────────────────────────────
 
   const renderMealActions = (msg: Message, index: number) => {
@@ -451,9 +436,31 @@ export default function ChatScreen({
 
   // ── JSX ────────────────────────────────────────────────────────────
 
+  const isStandaloneScreen = routeName === 'ChatScreen';
+
+  const screenHeader = isStandaloneScreen ? (
+    <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background }}>
+      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.borderLight }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
+        <View style={{ width: 26 }} />
+      </View>
+    </SafeAreaView>
+  ) : (
+    <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.borderLight }]}>
+      <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
+    </View>
+  );
+
   if (!ready) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        {screenHeader}
         <View style={{ padding: 20 }}>
           <SkeletonText lines={2} style={{ marginBottom: 24 }} />
           <SkeletonRow />
@@ -466,12 +473,7 @@ export default function ChatScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.borderLight }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
-        <TouchableOpacity onPress={handleClearChat}>
-          <Ionicons name="trash-outline" size={22} color="#ff3b30" />
-        </TouchableOpacity>
-      </View>
+      {screenHeader}
 
       <KeyboardAvoidingView
         style={styles.chatContainer}
