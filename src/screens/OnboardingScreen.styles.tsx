@@ -48,8 +48,8 @@ export const createStyles = (colors: ThemeColors, isDark: boolean) =>
       backgroundColor: colors.text,
     },
     stepCircleCompleted: {
-      borderColor: '#10b981',
-      backgroundColor: '#10b981',
+      borderColor: '#8B5CF6',
+      backgroundColor: '#8B5CF6',
     },
     stepCircleText: {
       fontSize: 12,
@@ -99,10 +99,10 @@ export const createStyles = (colors: ThemeColors, isDark: boolean) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
-      backgroundColor: isDark ? '#064e3b' : '#ecfdf5',
+      backgroundColor: isDark ? '#2e1065' : '#F5F3FF',
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: isDark ? '#10b981' : '#a7f3d0',
+      borderColor: isDark ? '#8B5CF6' : '#DDD6FE',
       paddingVertical: 12,
       paddingHorizontal: 14,
       marginBottom: 16,
@@ -110,7 +110,7 @@ export const createStyles = (colors: ThemeColors, isDark: boolean) =>
     connectedBannerText: {
       fontSize: 15,
       fontWeight: '600',
-      color: isDark ? '#6ee7b7' : '#065f46',
+      color: isDark ? '#C4B5FD' : '#4c1d95',
     },
     maskedKeyContainer: {
       flexDirection: 'row',

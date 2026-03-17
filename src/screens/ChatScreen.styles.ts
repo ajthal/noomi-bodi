@@ -139,7 +139,7 @@ export const styles = StyleSheet.create({
   logMealButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 18,
@@ -154,14 +154,14 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#4CAF50',
+    borderColor: '#7C3AED',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 18,
     gap: 5,
   },
   editMealButtonText: {
-    color: '#4CAF50',
+    color: '#7C3AED',
     fontWeight: '600',
     fontSize: 13,
   },
@@ -173,7 +173,7 @@ export const styles = StyleSheet.create({
   },
   mealLoggedText: {
     fontSize: 13,
-    color: '#4CAF50',
+    color: '#7C3AED',
     fontWeight: '600',
   },
   saveMealRow: {

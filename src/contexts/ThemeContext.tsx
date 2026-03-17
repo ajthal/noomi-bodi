@@ -58,7 +58,7 @@ const LIGHT: ThemeColors = {
   tabBarActive: '#000000',
   tabBarInactive: 'gray',
   statusBar: 'dark-content',
-  accent: '#4CAF50',
+  accent: '#7C3AED',
   error: '#d32f2f',
 };
 
@@ -81,7 +81,7 @@ const DARK: ThemeColors = {
   tabBarActive: '#ffffff',
   tabBarInactive: '#888888',
   statusBar: 'light-content',
-  accent: '#4CAF50',
+  accent: '#7C3AED',
   error: '#ef5350',
 };
 

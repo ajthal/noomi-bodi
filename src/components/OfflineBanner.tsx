@@ -36,7 +36,7 @@ export function OfflineBanner({ isOnline, pendingCount }: OfflineBannerProps) {
   let bgColor: string;
   if (showBackOnline) {
     label = 'Back online';
-    bgColor = '#4CAF50';
+    bgColor = '#7C3AED';
   } else if (!isOnline) {
     label = 'You are offline';
     bgColor = '#FF9800';

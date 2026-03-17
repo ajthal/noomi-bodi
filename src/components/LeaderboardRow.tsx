@@ -31,7 +31,7 @@ export default function LeaderboardRow({
   const { colors, isDark } = useTheme();
 
   const highlightBg = isCurrentUser
-    ? isDark ? '#1b3a1b' : '#E8F5E9'
+    ? isDark ? '#1a1033' : '#EDE9FE'
     : undefined;
 
   return (

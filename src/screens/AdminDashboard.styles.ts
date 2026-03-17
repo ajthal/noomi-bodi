@@ -41,7 +41,7 @@ export default StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
   },
   retryBtnText: {
     color: '#fff',
@@ -102,8 +102,8 @@ export default StyleSheet.create({
     borderWidth: 1,
   },
   filterBtnActive: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
   },
   filterText: {
     fontSize: 12,
@@ -236,7 +236,7 @@ export default StyleSheet.create({
     marginBottom: 6,
   },
   roleOptionActive: {
-    backgroundColor: '#4CAF5020',
+    backgroundColor: '#7C3AED20',
   },
   roleOptionText: {
     fontSize: 14,

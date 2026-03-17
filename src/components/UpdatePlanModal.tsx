@@ -191,7 +191,7 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[s.actionBtn, s.saveBtn, { backgroundColor: '#4CAF50' }, loading && { opacity: 0.5 }]}
+                  style={[s.actionBtn, s.saveBtn, { backgroundColor: '#7C3AED' }, loading && { opacity: 0.5 }]}
                   onPress={handleSave}
                   disabled={loading}
                   activeOpacity={0.7}

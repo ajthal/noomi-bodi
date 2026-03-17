@@ -30,7 +30,7 @@ export default function SharedMealCard({
       </View>
 
       <View style={s.macroRow}>
-        <MacroPill label="Cal" value={sharedMeal.calories} color="#4CAF50" labelColor={colors.textSecondary} />
+        <MacroPill label="Cal" value={sharedMeal.calories} color="#7C3AED" labelColor={colors.textSecondary} />
         <MacroPill label="P" value={sharedMeal.protein} unit="g" color="#2196F3" labelColor={colors.textSecondary} />
         <MacroPill label="C" value={sharedMeal.carbs} unit="g" color="#FF9800" labelColor={colors.textSecondary} />
         <MacroPill label="F" value={sharedMeal.fat} unit="g" color="#9C27B0" labelColor={colors.textSecondary} />
@@ -181,7 +181,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     marginTop: 12,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingVertical: 10,
     borderRadius: 10,
   },

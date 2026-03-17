@@ -185,7 +185,7 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
             onPress={() => setMealPickerVisible(true)}
             activeOpacity={0.7}
           >
-            <Ionicons name="share-outline" size={20} color="#4CAF50" />
+            <Ionicons name="share-outline" size={20} color="#7C3AED" />
             <Text style={[s.shareButtonText, { color: colors.text }]}>Share a Meal</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </TouchableOpacity>

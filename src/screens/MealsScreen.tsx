@@ -38,14 +38,14 @@ import { useStaleFetch } from '../hooks/useStaleFetch';
 
 const SORT_OPTIONS = [
   { key: 'name', label: 'Name', color: '#607D8B' },
-  { key: 'calories', label: 'Calories', color: '#4CAF50' },
+  { key: 'calories', label: 'Calories', color: '#7C3AED' },
   { key: 'protein', label: 'Protein', color: '#2196F3' },
   { key: 'carbs', label: 'Carbs', color: '#FF9800' },
   { key: 'fat', label: 'Fat', color: '#9C27B0' },
 ];
 
 const FILTER_MACROS = [
-  { key: 'calories', label: 'Calories', color: '#4CAF50' },
+  { key: 'calories', label: 'Calories', color: '#7C3AED' },
   { key: 'protein', label: 'Protein (g)', color: '#2196F3' },
   { key: 'carbs', label: 'Carbs (g)', color: '#FF9800' },
   { key: 'fat', label: 'Fat (g)', color: '#9C27B0' },
@@ -323,7 +323,7 @@ export default function MealsScreen(): React.JSX.Element {
         </View>
 
         <View style={s.macroRow}>
-          <MacroPill label="Cal" value={item.calories} color="#4CAF50" labelColor={colors.textSecondary} />
+          <MacroPill label="Cal" value={item.calories} color="#7C3AED" labelColor={colors.textSecondary} />
           <MacroPill label="Protein" value={item.protein} unit="g" color="#2196F3" labelColor={colors.textSecondary} />
           <MacroPill label="Carbs" value={item.carbs} unit="g" color="#FF9800" labelColor={colors.textSecondary} />
           <MacroPill label="Fat" value={item.fat} unit="g" color="#9C27B0" labelColor={colors.textSecondary} />
@@ -372,7 +372,7 @@ export default function MealsScreen(): React.JSX.Element {
             <Ionicons name="sparkles-outline" size={24} color="#FF9800" />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleCreate} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="add-circle-outline" size={28} color="#4CAF50" />
+            <Ionicons name="add-circle-outline" size={28} color="#7C3AED" />
           </TouchableOpacity>
         </View>
       </View>
@@ -792,7 +792,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     marginTop: 12,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingVertical: 10,
     borderRadius: 10,
   },
@@ -833,7 +833,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 20,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,

@@ -95,7 +95,7 @@ export default function DailyTotals({ totals, goals, compact }: Props) {
         <ProgressBar
           current={totals.calories}
           goal={goals.calories}
-          color="#4CAF50"
+          color="#7C3AED"
           barTrackBg={colors.border}
         />
         <View style={s.compactMacros}>
@@ -120,7 +120,7 @@ export default function DailyTotals({ totals, goals, compact }: Props) {
         current={totals.calories}
         goal={goals.calories}
         unit=" cal"
-        color="#4CAF50"
+        color="#7C3AED"
         labelColor={colors.text}
         valueColor={colors.textSecondary}
         barTrackBg={colors.border}
@@ -184,7 +184,7 @@ const s = StyleSheet.create({
   compactCalPct: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#4CAF50',
+    color: '#7C3AED',
   },
   compactMacros: {
     flexDirection: 'row',

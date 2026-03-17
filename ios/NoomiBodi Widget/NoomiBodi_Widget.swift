@@ -36,7 +36,7 @@ private let textSecondary = Color(hex: 0x999999)
 private let textTertiary = Color(hex: 0x666666)
 private let borderColor = Color(hex: 0x333333)
 
-private let calorieGreen = Color(hex: 0x4CAF50)
+private let accentPurple = Color(hex: 0x7C3AED)
 private let proteinBlue = Color(hex: 0x2196F3)
 private let carbsOrange = Color(hex: 0xFF9800)
 private let fatPurple = Color(hex: 0x9C27B0)
@@ -166,7 +166,7 @@ struct CalorieRingView: View {
                 .stroke(borderColor, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: progress)
-                .stroke(calorieGreen, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .stroke(accentPurple, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
                 Text("\(remaining)")
@@ -306,7 +306,7 @@ struct NoomiBodi_WidgetEntryView: View {
                             .frame(width: 82, height: 82)
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 18))
-                            .foregroundColor(calorieGreen)
+                            .foregroundColor(accentPurple)
                             .background(Circle().fill(bgColor).frame(width: 16, height: 16))
                     }
                     Text("\(data.caloriesConsumed)/\(data.caloriesGoal) cal")
