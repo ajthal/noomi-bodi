@@ -23,8 +23,8 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **SettingsPage** — pushable RootStack screen (via ProfilePage gear icon). Privacy toggle, API key, appearance, sign out, reset profile. Includes themed back button when standalone.
 - **EditProfileScreen** — RootStack screen for editing username, display name, bio, profile picture upload
 - **AdminDashboard** — admin-only page in the flat pager (conditionally shown)
-- **OnboardingScreen** — multi-step onboarding (API key, profile info, goals, activity, account, username, details, Claude plan); styles in separate `OnboardingScreen.styles.tsx` using `createStyles(colors, isDark)` pattern
-- **SignInScreen** — standalone sign-in screen shown after sign-out (without profile reset); supports email/password, Apple, and Google sign-in
+- **OnboardingScreen** — multi-step onboarding (API key, profile info, goals, activity, account, username, details, Claude plan); styles in separate `OnboardingScreen.styles.tsx` using `createStyles(colors, isDark)` pattern; step 1 shows full-width primary button + "Returning user? Sign in here" link (navigates to `SignInScreen` via `onSignIn` prop)
+- **SignInScreen** — standalone sign-in screen shown after sign-out (without profile reset); supports email/password, Apple, and Google sign-in; optional `onBack` prop shows a back arrow (only when navigated from onboarding's "Sign in here" link)
 - **EmailVerificationScreen** — blocks entry to main app until email is verified; polls session every 5s, has resend with 60s cooldown; skipped for social sign-ins (Google/Apple)
 
 ### Services (src/services/)
@@ -33,7 +33,7 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **mealLog.ts** — daily_logs CRUD (Supabase + offline queue); triggers streak milestone check after successful log
 - **savedMeals.ts** — saved_meals CRUD + `clearAllSavedMeals()` for profile reset
 - **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans; `UserProfile` includes social fields (username, displayName, profilePictureUrl, bio, isPrivate); `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights
-- **profileService.ts** — username validation, availability check, user search via `public_profiles` view (ILIKE on username/display_name), admin search via `profiles` (includes email/role), profile picture upload to Supabase Storage, partial profile field updates, `suggestUsernameFromEmail()`
+- **profileService.ts** — username validation, availability check, user search via `public_profiles` table (ILIKE on username/display_name), admin search via `profiles` (includes email/role), profile picture upload to Supabase Storage, partial profile field updates, `suggestUsernameFromEmail()`
 - **friendships.ts** — friend request CRUD (send/accept/decline/remove); accept/decline restricted to recipient via `following_id` filter; queries for accepted friends, pending received/sent, friendship status check between two users
 - **activityFeed.ts** — streak milestone insertion, duplicate checking, friend activity feed query (RLS handles privacy); `checkAndRecordMilestone()` for auto-logging milestones
 - **leaderboard.ts** — weekly leaderboard calculation (adherence % = days hit calorie goal / 7); filters out private users; returns ranked list
@@ -90,6 +90,7 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 ### Branding & Assets (src/assets/)
 - **Noomi** — the app's mascot, a purple phoenix. The primary Noomi image is `src/assets/noomi.png` (1024px, transparent background).
 - **App icons**: Noomi-based icons installed for iOS (`Images.xcassets/AppIcon.appiconset/`), iOS widget (`NoomiBodi Widget/Assets.xcassets/AppIcon.appiconset/`), and Android (`mipmap-*/ic_launcher.png` + `ic_launcher_round.png`).
+- **Launch screen**: `LaunchScreen.storyboard` shows Noomi mascot (120x120, `NoomiLogo` image set) centered above "NoomiBodi" label in purple. Image set at `Images.xcassets/NoomiLogo.imageset/`.
 - **Chat avatar**: Assistant messages in ChatScreen show a circular Noomi avatar (22x22) next to the "Noomi" label. The chat empty state uses a larger (80x80) Noomi image with "Chat with Noomi" title.
 - **Color palette** derived from Noomi: accent purple `#7C3AED`, lighter purple `#8B5CF6`, deep purple `#5B21B6`, light purple bg `#EDE9FE` / dark purple bg `#1a1033`. The old green accent (`#4CAF50`) has been fully replaced.
 
@@ -99,7 +100,7 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 - **Social Auth**: Apple Sign-In via `@invertase/react-native-apple-authentication` (library auto-hashes nonce with SHA256 before sending to Apple, so pass RAW nonce to both the library and Supabase); Google Sign-In via `@react-native-google-signin/google-signin` (patched native iOS code via `patch-package` to support nonce parameter; Google does NOT auto-hash, so pass SHA256 hashed nonce to Google + raw nonce to Supabase `signInWithIdToken`)
 - **Identity Linking**: Supabase automatic linking is enabled by default — same email across Google, Apple, and email/password maps to one account
 - **Email Verification**: After email/password sign-up, user completes onboarding but is blocked from the main app by `EmailVerificationScreen` until `email_confirmed_at` is set; social sign-ins skip this
-- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`; `RootStack` includes `EditProfileScreen`, `FriendProfileScreen`, `ProfileScreen`, `SettingsScreen`, and `ChatScreen` as pushable screens on top of `MainTabs`
+- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`; onboarding step 1 "Sign in here" sets `signInFromOnboarding` flag → `SignInScreen` gets `onBack` to return to onboarding; `RootStack` includes `EditProfileScreen`, `FriendProfileScreen`, `ProfileScreen`, `SettingsScreen`, and `ChatScreen` as pushable screens on top of `MainTabs`
 - **Flat Pager Navigation**: `MainTabs` uses `createMaterialTopTabNavigator` as a flat swipeable pager with all screens registered individually: Home, MyMeals, SharedMeals, Reports, Insights, Social (, Admin). A persistent `TopBar` (profile picture left → ProfileScreen, chat bubble right → ChatScreen) sits above the pager. A `SubTabBar` (icon-based segmented control) appears for multi-page tab groups (Meals, Reports). A `CustomBottomTabBar` groups pages into tab groups (Home, Meals, Reports, Social, Admin) and highlights the active group. Navigation between tabs via swipe or bottom tab press; sub-page switching via SubTabBar or swipe.
 - **Deep Links**: `useDeepLink` hook in QuickLogPage handles `noomibodi://quick-log` and `noomibodi://add-photo` (both launch camera). Widget uses `add-photo` for camera button, `quick-log` as default tap URL.
 - **Social Features**: Bidirectional friendships (both must accept), privacy toggle (hides activity/leaderboard), streak milestones auto-logged on meal log, weekly leaderboard (Mon-Sun adherence %), meal sharing between accepted friends
@@ -139,13 +140,13 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 - iOS widget accent color matches the app (`0x7C3AED` in `NoomiBodi_Widget.swift`)
 
 ## Database (Supabase + RLS)
-Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`, `device_tokens`
+Tables: `profiles`, `public_profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`, `device_tokens`, `meal_plans`
 Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
 
 **Social columns on `profiles`:** `username` (UNIQUE), `display_name`, `profile_picture_url`, `bio`, `is_private` (default false)
 
-**Views:**
-- `public_profiles` — security definer view exposing only safe columns (`id`, `username`, `display_name`, `profile_picture_url`, `bio`, `is_private`, `created_at`). All social cross-user lookups use this view. Excludes `email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`, `role`. GRANT to `authenticated`, REVOKE from `anon`/`public`.
+**Synced Tables:**
+- `public_profiles` — separate table (not a view) containing only non-sensitive profile columns (`id`, `username`, `display_name`, `profile_picture_url`, `bio`, `is_private`, `created_at`). Kept in sync with `profiles` via the `sync_public_profile()` SECURITY DEFINER trigger (fires AFTER INSERT/UPDATE/DELETE on `profiles`). All social cross-user lookups query this table. Excludes `email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`, `role`. RLS: `authenticated` can SELECT all rows.
 
 **Social tables:**
 - `friendships` — bidirectional friend system (follower_id, following_id, status: pending/accepted/declined). Both users can view/delete; only follower can create; only recipient (`following_id`) can accept/decline (UPDATE).
@@ -156,13 +157,22 @@ Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
 - `device_tokens` — FCM token storage (user_id, fcm_token, platform). RLS: users manage own tokens. UNIQUE(user_id, fcm_token). ON DELETE CASCADE from auth.users.
 
 **Helper functions:**
-- `is_admin()` — SECURITY DEFINER function checking `profiles.role = 'admin'`, used in admin RLS policies to avoid recursion.
+- `is_admin()` — SECURITY DEFINER SQL function checking `profiles.role = 'admin'`, used in admin RLS policies to avoid recursion.
+- `sync_public_profile()` — SECURITY DEFINER trigger function that fires AFTER INSERT/UPDATE/DELETE on `profiles`. Upserts public-facing columns into `public_profiles` on insert/update, deletes on delete.
 - `claim_device_token(p_fcm_token)` — SECURITY DEFINER function that deletes stale `device_tokens` entries for the same FCM token belonging to a different user. Called during token registration to handle device reuse across accounts.
 - `get_friend_stats(p_friend_id)` — SECURITY DEFINER function returning JSONB with friend's stats (streak, adherence), plan, weight progress, and avg macros. Checks accepted friendship and non-private profile. Called by `FriendProfileScreen` via `reportData.getFriendStats()`.
 
 **Storage bucket:** `profile-pictures` (public). Folder structure: `{user_id}/{timestamp}.jpg`. URLs stored in `profiles.profile_picture_url`.
 
 See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
+
+## Environment Management
+- **Dev/Prod split**: Separate Supabase projects and Firebase projects for development and production.
+- **`.env`** (dev) and **`.env.production`** (prod) — loaded via `react-native-dotenv` with `envName: 'APP_ENV'` in `babel.config.js`.
+- **Switching**: `APP_ENV=production react-native start --reset-cache` or use `npm run start:prod` / `npm run ios:prod`.
+- **Firebase plist**: Dev and prod `GoogleService-Info.plist` files stored in `ios/firebase/` (gitignored). Copy the correct one to `ios/GoogleService-Info.plist` before building. See `docs/deployment-guide.md` for switching commands.
+- **Schema migrations**: Managed via Supabase CLI. Migration files in `supabase/migrations/`. Apply with `supabase link --project-ref <ref> && supabase db push`.
+- **Bundle ID**: `com.athalhei.noomibodi` (main app), `com.athalhei.noomibodi.widget` (widget extension).
 
 ## Dependencies
 - react-native-image-picker, react-native-chart-kit, react-native-svg

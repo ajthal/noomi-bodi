@@ -92,7 +92,7 @@ export default function AIMealBuilderModal({ visible, onGenerated, onCancel }: P
       ]);
 
       if (!apiKey) {
-        setError('Add your Claude API key in the Profile tab first.');
+        setError('Add your Claude API key in Profile settings first.');
         return;
       }
 

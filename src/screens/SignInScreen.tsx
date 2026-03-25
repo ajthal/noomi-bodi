@@ -19,9 +19,10 @@ import { useTheme, type ThemeColors } from '../contexts/ThemeContext';
 
 interface SignInScreenProps {
   onSignedIn: () => void;
+  onBack?: () => void;
 }
 
-const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
+const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn, onBack }) => {
   const { signIn, signUp, signInWithApple, signInWithGoogle, resetPassword } = useAuth();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
@@ -100,6 +101,11 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.container}>
+            {onBack && (
+              <Pressable onPress={onBack} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={24} color={colors.text} />
+              </Pressable>
+            )}
             <View style={styles.header}>
               <Text style={styles.title}>Welcome back</Text>
               <Text style={styles.subtitle}>
@@ -215,6 +221,13 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       flex: 1,
       paddingHorizontal: 20,
       justifyContent: 'center',
+    },
+    backButton: {
+      position: 'absolute',
+      top: 12,
+      left: 20,
+      padding: 8,
+      zIndex: 1,
     },
     header: {
       marginBottom: 24,

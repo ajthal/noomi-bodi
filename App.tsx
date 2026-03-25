@@ -178,6 +178,7 @@ function AppInner() {
   const { isImpersonating, isSwitching } = useImpersonation();
   const [initialCheckDone, setInitialCheckDone] = useState(false);
   const [screen, setScreen] = useState<AppScreen>('loading');
+  const [signInFromOnboarding, setSignInFromOnboarding] = useState(false);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const { isOnline, pendingCount } = useOfflineSync();
   const navigationRef = React.useRef<any>(null);
@@ -364,12 +365,12 @@ function AppInner() {
           )}
           {screen === 'signIn' && (
             <RootStack.Screen name="SignIn">
-              {() => <SignInScreen onSignedIn={handleSignedIn} />}
+              {() => <SignInScreen onSignedIn={handleSignedIn} onBack={signInFromOnboarding ? () => { setSignInFromOnboarding(false); setScreen('onboarding'); } : undefined} />}
             </RootStack.Screen>
           )}
           {screen === 'onboarding' && (
             <RootStack.Screen name="Onboarding">
-              {() => <OnboardingScreen onComplete={handleOnboardingComplete} />}
+              {() => <OnboardingScreen onComplete={handleOnboardingComplete} onSignIn={() => { setSignInFromOnboarding(true); setScreen('signIn'); }} />}
             </RootStack.Screen>
           )}
         </RootStack.Navigator>

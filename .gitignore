@@ -37,11 +37,13 @@ local.properties
 
 # Environment (contains secrets)
 .env
+.env.production
 .env.local
 .env.*.local
 
 # Firebase config (contains API keys / project IDs)
 ios/GoogleService-Info.plist
+ios/firebase/
 android/app/google-services.json
 
 # Supabase CLI local state (contains project ref, pooler URL)

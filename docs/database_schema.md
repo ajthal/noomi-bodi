@@ -9,6 +9,8 @@
 
 The database uses Row Level Security (RLS) to ensure users can only access their own data. All tables reference `auth.users` from Supabase's built-in authentication system. Social features (friendships, activity feed, shared meals) use more complex RLS policies with cross-table checks for privacy and friendship status.
 
+The canonical schema lives in `supabase/migrations/20260323230000_initial_schema.sql`. Apply it to a fresh Supabase project with `supabase db push`.
+
 ---
 
 ## Tables
@@ -27,8 +29,8 @@ Extended user profile information beyond basic authentication.
 - `is_private` (BOOLEAN, Default: false) - Privacy toggle for social features
 - `gender` (TEXT) - User's gender
 - `age` (INTEGER) - User's age in years
-- `height_cm` (DECIMAL) - Height in centimeters
-- `current_weight_kg` (DECIMAL) - Current weight in kilograms
+- `height_cm` (NUMERIC) - Height in centimeters
+- `current_weight_kg` (NUMERIC) - Current weight in kilograms
 - `activity_level` (TEXT) - Activity level (sedentary, moderate, active, etc.)
 - `role` (TEXT, Default: 'byok') - User role for access control
   - Valid values: `admin`, `beta`, `pro`, `standard`, `byok`
@@ -40,16 +42,39 @@ Extended user profile information beyond basic authentication.
 - `profiles_username_idx` on `username` (for fast user search)
 
 **RLS Policies:**
-- Users can view own profile
+- Users can view own profile (`auth.uid() = id`)
+- Authenticated users can view all profiles (`auth.uid() IS NOT NULL`)
 - Admins can see all profiles (via `is_admin()` SECURITY DEFINER function)
 - Users can update own profile
 - Users can insert own profile
 
-**Note:** Sensitive columns (`email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`) are only accessible to the owning user or admins. Social features use the `public_profiles` view (see Views section) for cross-user lookups.
+**Trigger:** On INSERT, UPDATE, or DELETE, the `sync_public_profile` trigger copies the public-facing columns to the `public_profiles` table (see below).
 
 ---
 
-### 2. `user_plans`
+### 2. `public_profiles`
+
+Separate table containing only non-sensitive profile columns for social feature lookups. Kept in sync with `profiles` via the `sync_public_profile` trigger. All social services (`friendships.ts`, `activityFeed.ts`, `sharedMeals.ts`, `profileService.ts`) query this table instead of `profiles` directly.
+
+**Columns:**
+- `id` (UUID, Primary Key)
+- `username` (TEXT)
+- `display_name` (TEXT)
+- `profile_picture_url` (TEXT)
+- `bio` (TEXT)
+- `is_private` (BOOLEAN, NOT NULL, Default: false)
+- `created_at` (TIMESTAMP WITH TIME ZONE)
+
+**Excluded from this table (private):** `email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`, `role`, `updated_at`
+
+**RLS Policies:**
+- Authenticated users can read all public profiles (`true` for `authenticated` role)
+
+**Sync mechanism:** The `sync_public_profile()` SECURITY DEFINER trigger function fires AFTER INSERT/UPDATE/DELETE on `profiles`. On INSERT/UPDATE, it upserts the matching row in `public_profiles`. On DELETE, it removes the row.
+
+---
+
+### 3. `user_plans`
 
 Nutrition plans and goals for users, generated during onboarding or updated through conversations with AI.
 
@@ -57,7 +82,7 @@ Nutrition plans and goals for users, generated during onboarding or updated thro
 - `id` (UUID, Primary Key) - Unique plan identifier
 - `user_id` (UUID, Foreign Key → `auth.users.id`) - Owner of the plan
 - `goal_type` (TEXT) - Type of goal: `lose`, `maintain`, or `gain`
-- `target_weight_kg` (DECIMAL) - Target weight in kilograms
+- `target_weight_kg` (NUMERIC) - Target weight in kilograms
 - `daily_calories` (INTEGER) - Daily calorie target
 - `daily_protein_g` (INTEGER) - Daily protein target in grams
 - `daily_carbs_g` (INTEGER) - Daily carbohydrate target in grams
@@ -77,7 +102,7 @@ Nutrition plans and goals for users, generated during onboarding or updated thro
 
 ---
 
-### 3. `saved_meals`
+### 4. `saved_meals`
 
 User's personal library of frequently eaten meals for quick logging.
 
@@ -86,9 +111,9 @@ User's personal library of frequently eaten meals for quick logging.
 - `user_id` (UUID, Foreign Key → `auth.users.id`) - Owner of the meal
 - `meal_name` (TEXT, Required) - Name of the meal
 - `calories` (INTEGER) - Total calories
-- `protein_g` (DECIMAL) - Protein in grams
-- `carbs_g` (DECIMAL) - Carbohydrates in grams
-- `fat_g` (DECIMAL) - Fat in grams
+- `protein_g` (NUMERIC) - Protein in grams
+- `carbs_g` (NUMERIC) - Carbohydrates in grams
+- `fat_g` (NUMERIC) - Fat in grams
 - `image_url` (TEXT) - Optional image URL from storage
 - `notes` (TEXT) - Optional notes about the meal
 - `created_at` (TIMESTAMP WITH TIME ZONE) - When meal was saved
@@ -98,14 +123,14 @@ User's personal library of frequently eaten meals for quick logging.
 
 **RLS Policies:**
 - Users can view own saved meals
-- Users can view meals shared with them (via subquery on `shared_meals`)
+- Users can view meals shared with them (via `IN` subquery on `shared_meals.shared_with = auth.uid()`)
 - Users can insert own saved meals
 - Users can update own saved meals
 - Users can delete own saved meals
 
 ---
 
-### 4. `daily_logs`
+### 5. `daily_logs`
 
 Individual meal entries logged throughout each day. Each row represents one meal or snack.
 
@@ -115,9 +140,9 @@ Individual meal entries logged throughout each day. Each row represents one meal
 - `logged_at` (TIMESTAMP WITH TIME ZONE, Default: NOW) - When the meal was logged
 - `meal_name` (TEXT, Required) - Name/description of the meal
 - `calories` (INTEGER) - Total calories
-- `protein_g` (DECIMAL) - Protein in grams
-- `carbs_g` (DECIMAL) - Carbohydrates in grams
-- `fat_g` (DECIMAL) - Fat in grams
+- `protein_g` (NUMERIC) - Protein in grams
+- `carbs_g` (NUMERIC) - Carbohydrates in grams
+- `fat_g` (NUMERIC) - Fat in grams
 - `meal_type` (TEXT) - Category: `breakfast`, `lunch`, `dinner`, `snack`
 - `image_url` (TEXT) - Optional image URL
 - `notes` (TEXT) - Optional notes
@@ -132,36 +157,16 @@ Individual meal entries logged throughout each day. Each row represents one meal
 - Users can update own daily logs
 - Users can delete own daily logs
 
-**Common Queries:**
-```sql
--- Get today's meals
-SELECT * FROM daily_logs 
-WHERE user_id = 'xxx' 
-AND DATE(logged_at) = CURRENT_DATE
-ORDER BY logged_at DESC;
-
--- Get weekly totals
-SELECT 
-  DATE(logged_at) as date,
-  SUM(calories) as total_calories,
-  SUM(protein_g) as total_protein
-FROM daily_logs
-WHERE user_id = 'xxx'
-AND logged_at >= NOW() - INTERVAL '7 days'
-GROUP BY DATE(logged_at)
-ORDER BY date;
-```
-
 ---
 
-### 5. `weight_logs`
+### 6. `weight_logs`
 
 Weight check-ins over time for tracking progress toward goals.
 
 **Columns:**
 - `id` (UUID, Primary Key) - Unique weight log identifier
 - `user_id` (UUID, Foreign Key → `auth.users.id`) - Who logged the weight
-- `weight_kg` (DECIMAL, Required) - Weight in kilograms
+- `weight_kg` (NUMERIC, Required) - Weight in kilograms
 - `logged_at` (TIMESTAMP WITH TIME ZONE, Default: NOW) - When weight was recorded
 - `notes` (TEXT) - Optional notes about the weigh-in
 
@@ -175,25 +180,9 @@ Weight check-ins over time for tracking progress toward goals.
 - Users can update own weight logs
 - Users can delete own weight logs
 
-**Common Queries:**
-```sql
--- Get weight trend over last 30 days
-SELECT logged_at, weight_kg 
-FROM weight_logs
-WHERE user_id = 'xxx'
-AND logged_at >= NOW() - INTERVAL '30 days'
-ORDER BY logged_at;
-
--- Calculate weight change
-SELECT 
-  (SELECT weight_kg FROM weight_logs WHERE user_id = 'xxx' ORDER BY logged_at DESC LIMIT 1) -
-  (SELECT weight_kg FROM weight_logs WHERE user_id = 'xxx' ORDER BY logged_at ASC LIMIT 1)
-  AS total_change;
-```
-
 ---
 
-### 6. `user_insights`
+### 7. `user_insights`
 
 AI-generated insights and recommendations cached for display in the app.
 
@@ -220,19 +209,9 @@ AI-generated insights and recommendations cached for display in the app.
 - Users can update own insights (for dismissing)
 - Users can delete own insights
 
-**Common Queries:**
-```sql
--- Get active insights for user
-SELECT * FROM user_insights
-WHERE user_id = 'xxx'
-AND is_dismissed = false
-AND (valid_until IS NULL OR valid_until > NOW())
-ORDER BY priority DESC, created_at DESC;
-```
-
 ---
 
-### 7. `ai_usage_logs`
+### 8. `ai_usage_logs`
 
 Logging table for all Claude API calls for monitoring and cost tracking. Only accessible by admins.
 
@@ -243,7 +222,7 @@ Logging table for all Claude API calls for monitoring and cost tracking. Only ac
 - `tokens_input` (INTEGER) - Input tokens consumed
 - `tokens_output` (INTEGER) - Output tokens consumed
 - `total_tokens` (INTEGER) - Total tokens (input + output)
-- `estimated_cost_usd` (DECIMAL(10,6)) - Estimated cost in USD
+- `estimated_cost_usd` (NUMERIC) - Estimated cost in USD
 - `latency_ms` (INTEGER) - Response time in milliseconds
 - `success` (BOOLEAN, Default: true) - Whether the API call succeeded
 - `error_message` (TEXT) - Error details if failed
@@ -256,37 +235,12 @@ Logging table for all Claude API calls for monitoring and cost tracking. Only ac
 - `ai_usage_logs_created_at_idx` on `created_at`
 
 **RLS Policies:**
-- Admins can view all logs (checks `profiles.role = 'admin'`)
-- System can insert logs for any user
-
-**Common Queries:**
-```sql
--- Total usage by user (admin only)
-SELECT 
-  user_id,
-  COUNT(*) as total_calls,
-  SUM(total_tokens) as total_tokens,
-  SUM(estimated_cost_usd) as total_cost
-FROM ai_usage_logs
-WHERE created_at >= NOW() - INTERVAL '30 days'
-GROUP BY user_id
-ORDER BY total_cost DESC;
-
--- Error rate
-SELECT 
-  DATE(created_at) as date,
-  COUNT(*) as total_calls,
-  SUM(CASE WHEN success = false THEN 1 ELSE 0 END) as errors,
-  ROUND(100.0 * SUM(CASE WHEN success = false THEN 1 ELSE 0 END) / COUNT(*), 2) as error_rate_pct
-FROM ai_usage_logs
-WHERE created_at >= NOW() - INTERVAL '7 days'
-GROUP BY DATE(created_at)
-ORDER BY date;
-```
+- Admins can view all logs (checks `profiles.role = 'admin'` via direct subquery)
+- Authenticated users can insert own logs (`auth.uid() = user_id`, scoped to `authenticated` role)
 
 ---
 
-### 8. `friendships`
+### 9. `friendships`
 
 Bidirectional friend system. Both users must accept for friendship to be active (status = 'accepted').
 
@@ -294,7 +248,7 @@ Bidirectional friend system. Both users must accept for friendship to be active 
 - `id` (UUID, Primary Key) - Unique friendship identifier
 - `follower_id` (UUID, Foreign Key → `auth.users.id`) - User who sent the request
 - `following_id` (UUID, Foreign Key → `auth.users.id`) - User who received the request
-- `status` (TEXT) - Request status: `pending`, `accepted`, or `declined`
+- `status` (TEXT, NOT NULL, Default: 'pending') - Request status: `pending`, `accepted`, or `declined`
 - `created_at` (TIMESTAMP WITH TIME ZONE) - When request was sent
 - `accepted_at` (TIMESTAMP WITH TIME ZONE, nullable) - When request was accepted
 
@@ -308,22 +262,22 @@ Bidirectional friend system. Both users must accept for friendship to be active 
 - `friendships_status_idx` on `status`
 
 **RLS Policies:**
-- Users can view friendships they're part of (as follower or following)
-- Users can create friend requests (as follower only)
+- Users can view their own friendships (as follower or following)
+- Users can send friend requests (as follower only)
 - Recipients can accept or decline friend requests (UPDATE restricted to `following_id = auth.uid()`)
-- Users can delete friendships they're part of (either party can unfriend/cancel)
+- Users can delete their own friendships (either party can unfriend/cancel)
 
 ---
 
-### 9. `activity_feed`
+### 10. `activity_feed`
 
 Stores user achievements (streak milestones) to display in friend activity feeds.
 
 **Columns:**
 - `id` (UUID, Primary Key) - Unique activity identifier
 - `user_id` (UUID, Foreign Key → `auth.users.id`) - Who performed the activity
-- `activity_type` (TEXT) - Type of activity (currently only `streak_milestone`)
-- `activity_data` (JSONB) - Activity details (e.g., `{ "streak_days": 7 }`)
+- `activity_type` (TEXT, NOT NULL) - Type of activity (currently only `streak_milestone`)
+- `activity_data` (JSONB, NOT NULL) - Activity details (e.g., `{ "streak_days": 7 }`)
 - `created_at` (TIMESTAMP WITH TIME ZONE) - When the activity occurred
 
 **Activity types (MVP):**
@@ -336,27 +290,14 @@ Stores user achievements (streak milestones) to display in friend activity feeds
 **RLS Policies:**
 - Users can view their own activity
 - Users can view accepted friends' activity IF friend is not private:
+  - Uses a JOIN between `friendships` and `profiles`
   - Bidirectional friendship must exist with status = 'accepted'
-  - Friend's `profiles.is_private` must be `false` (or viewing own activity)
+  - Friend's `profiles.is_private` must be `false` (OR viewing own activity)
 - Users can insert their own activity
-
-**Common Queries:**
-```sql
--- Get friend activity feed (respects privacy)
-SELECT af.* FROM activity_feed af
-JOIN friendships f ON (
-  (f.follower_id = 'current_user' AND f.following_id = af.user_id)
-  OR (f.following_id = 'current_user' AND f.follower_id = af.user_id)
-)
-JOIN profiles p ON p.id = af.user_id
-WHERE f.status = 'accepted'
-AND p.is_private = false
-ORDER BY af.created_at DESC;
-```
 
 ---
 
-### 10. `shared_meals`
+### 11. `shared_meals`
 
 Allows friends to share saved meals with each other. Recipients can copy shared meals to their own library.
 
@@ -375,31 +316,13 @@ Allows friends to share saved meals with each other. Recipients can copy shared 
 
 **RLS Policies:**
 - Users can view meals shared with them OR by them
-- Users can share their own meals (validates meal ownership via `saved_meals`)
+- Users can share their own meals with friends (validates meal ownership via `saved_meals` AND validates accepted friendship via `friendships`)
 - Recipients can update read status (mark as read)
-- Recipients can delete meals shared with them
-
-**Common Queries:**
-```sql
--- Get unread shared meals inbox
-SELECT sm.*, s.meal_name, s.calories, s.protein_g, s.carbs_g, s.fat_g,
-       p.username, p.display_name, p.profile_picture_url
-FROM shared_meals sm
-JOIN saved_meals s ON s.id = sm.meal_id
-JOIN profiles p ON p.id = sm.shared_by
-WHERE sm.shared_with = 'current_user'
-AND sm.is_read = false
-ORDER BY sm.created_at DESC;
-
--- Get unread count for badge
-SELECT COUNT(*) FROM shared_meals
-WHERE shared_with = 'current_user'
-AND is_read = false;
-```
+- Recipients can delete shared meals they received
 
 ---
 
-### 11. `device_tokens`
+### 12. `device_tokens`
 
 Stores FCM (Firebase Cloud Messaging) tokens for push notification delivery. Each row maps a user to a specific device's FCM token.
 
@@ -407,7 +330,7 @@ Stores FCM (Firebase Cloud Messaging) tokens for push notification delivery. Eac
 - `id` (UUID, Primary Key) - Unique token entry identifier
 - `user_id` (UUID, Foreign Key → `auth.users.id`, ON DELETE CASCADE) - Token owner
 - `fcm_token` (TEXT, Required) - Firebase Cloud Messaging device token
-- `platform` (TEXT, Default: 'ios') - Device platform
+- `platform` (TEXT, NOT NULL, Default: 'ios') - Device platform
 - `created_at` (TIMESTAMP WITH TIME ZONE) - When token was first registered
 - `updated_at` (TIMESTAMP WITH TIME ZONE) - Last token refresh
 
@@ -428,28 +351,19 @@ Stores FCM (Firebase Cloud Messaging) tokens for push notification delivery. Eac
 
 ---
 
-## Views
+### 13. `meal_plans`
 
-### `public_profiles`
-
-Security definer view exposing only non-sensitive profile columns for social feature lookups. All social services (`friendships.ts`, `activityFeed.ts`, `sharedMeals.ts`, `profileService.ts`) query this view instead of the `profiles` table directly.
+Saved multi-day meal plans for structured eating schedules.
 
 **Columns:**
-- `id` (UUID)
-- `username` (TEXT)
-- `display_name` (TEXT)
-- `profile_picture_url` (TEXT)
-- `bio` (TEXT)
-- `is_private` (BOOLEAN)
-- `created_at` (TIMESTAMP WITH TIME ZONE)
-
-**Excluded from view (private):** `email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`, `role`, `updated_at`
-
-**Access:**
-- `GRANT SELECT` to `authenticated` role
-- `REVOKE SELECT` from `anon` and `public` roles
-- Security definer mode bypasses profiles RLS, so authenticated users can look up any user's public info
-- Admin search (`adminSearchUsers`) queries `profiles` directly for email/role access
+- `id` (UUID, Primary Key) - Unique meal plan identifier
+- `user_id` (UUID, Foreign Key → `auth.users.id`) - Owner of the plan
+- `name` (TEXT, Required) - Name of the meal plan
+- `start_date` (DATE, Required) - Plan start date
+- `end_date` (DATE, Required) - Plan end date
+- `plan_data` (JSONB, Required) - Structured plan data (meals per day)
+- `is_active` (BOOLEAN, Default: true) - Whether this plan is currently active
+- `created_at` (TIMESTAMP WITH TIME ZONE) - When the plan was created
 
 ---
 
@@ -473,6 +387,8 @@ Public bucket for user profile images. URLs are saved in `profiles.profile_pictu
 auth.users (Supabase managed)
     ↓
     ├── profiles (1:1) - Extended with username, picture, bio, privacy
+    │       ↓ (sync trigger)
+    │       └── public_profiles (1:1) - Non-sensitive columns only
     ├── user_plans (1:many)
     ├── saved_meals (1:many)
     │       ↓
@@ -486,7 +402,8 @@ auth.users (Supabase managed)
     ├── activity_feed (1:many)
     ├── shared_meals (1:many as sender)
     ├── shared_meals (1:many as recipient)
-    └── device_tokens (1:many) - FCM tokens for push notifications
+    ├── device_tokens (1:many) - FCM tokens for push notifications
+    └── meal_plans (1:many) - Structured multi-day eating plans
 ```
 
 ---
@@ -499,19 +416,20 @@ All tables have RLS enabled with policies ensuring:
 - Users can only access their own data
 - Admins can view additional data (ai_usage_logs, all profiles via `is_admin()` SECURITY DEFINER function)
 - Authentication is required for all operations
-- Cross-user social lookups go through the `public_profiles` view (security definer, non-sensitive columns only)
+- Cross-user social lookups go through the `public_profiles` table (synced from `profiles`, contains only non-sensitive columns)
 
 **Social feature RLS:**
 - **Friendships:** Bidirectional visibility — both follower and following can see and delete the row. Only the follower can create (send request). Only the recipient (`following_id`) can accept/decline (UPDATE).
-- **Activity Feed:** Complex privacy logic — own activity is always visible; friends' activity is visible only if friendship is accepted (bidirectional) AND friend's `is_private = false`. Prevents leaking private users' activities.
-- **Shared Meals:** Both sender and recipient can view. Only the sender can create (must own the meal via `saved_meals`). Only the recipient can mark as read or delete.
-- **Saved Meals:** Users can view meals shared with them (via subquery on `shared_meals.shared_with = auth.uid()`) in addition to their own meals.
+- **Activity Feed:** Complex privacy logic — own activity is always visible; friends' activity is visible only if friendship is accepted (bidirectional) AND friend's `is_private = false`. Uses a JOIN between `friendships` and `profiles` for the check.
+- **Shared Meals:** Both sender and recipient can view. Only the sender can create (must own the meal via `saved_meals` AND must have an accepted friendship with the recipient). Only the recipient can mark as read or delete.
+- **Saved Meals:** Users can view meals shared with them (via `IN` subquery on `shared_meals.shared_with = auth.uid()`) in addition to their own meals.
 
 ### Helper Functions
 
-- **`is_admin()`** — SECURITY DEFINER function that checks `profiles.role = 'admin'` for the current user. Bypasses RLS to avoid infinite recursion when used inside profile policies.
+- **`is_admin()`** — SECURITY DEFINER SQL function that checks `profiles.role = 'admin'` for the current user. Bypasses RLS to avoid infinite recursion when used inside profile policies.
+- **`sync_public_profile()`** — SECURITY DEFINER trigger function that fires AFTER INSERT/UPDATE/DELETE on `profiles`. Upserts public-facing columns into the `public_profiles` table, or deletes the row on profile deletion. Keeps the two tables in sync automatically.
 - **`claim_device_token(p_fcm_token TEXT)`** — SECURITY DEFINER function that deletes `device_tokens` rows where `fcm_token` matches but `user_id` differs from the caller (`auth.uid()`). Called during token registration to prevent stale tokens from a previous user on the same device from receiving notifications meant for a different account.
-- **`get_friend_stats(p_friend_id UUID)`** — SECURITY DEFINER function returning a JSONB object with a friend's stats, plan, weight progress, and average macros. Verifies an accepted friendship exists between the caller and `p_friend_id`, and that the friend's profile is not private. Returns `null` if checks fail. Aggregates: streak, days tracked, weekly adherence, active plan (goal type, calories, macros), weight progress (start, current, change), and 7-day average calories/macros. See `docs/migrations/get_friend_stats.sql` for full implementation.
+- **`get_friend_stats(p_friend_id UUID)`** — SECURITY DEFINER function returning a JSONB object with a friend's stats, plan, weight progress, and average macros. Verifies an accepted friendship exists between the caller and `p_friend_id`, and that the friend's profile is not private. Returns `null` if checks fail. Aggregates: streak, days tracked, weekly adherence, active plan (goal type, calories, macros), weight progress (start, current, change), and 7-day average calories/macros.
 
 ### Roles
 
@@ -521,6 +439,30 @@ Defined in `profiles.role`:
 - `pro` - Future premium tier
 - `standard` - Future basic tier
 - `byok` - Bring Your Own Key users (default)
+
+---
+
+## Migration Management
+
+Schema is managed via the Supabase CLI. Migration files live in `supabase/migrations/`.
+
+**Initial schema:** `supabase/migrations/20260323230000_initial_schema.sql`
+
+**Applying to a new project:**
+```bash
+supabase link --project-ref <project-ref>
+supabase db push
+```
+
+**Creating new migrations:**
+```bash
+# Create a new timestamped file
+# supabase/migrations/YYYYMMDDHHMMSS_description.sql
+
+# Apply to dev first, then prod
+supabase link --project-ref <dev-ref> && supabase db push
+supabase link --project-ref <prod-ref> && supabase db push
+```
 
 ---
 
@@ -546,7 +488,6 @@ Supabase provides automatic daily backups. Additional considerations:
 ## Future Considerations
 
 ### Potential New Tables:
-- `meal_plans` - Saved multi-day meal plans
 - `user_settings` - App preferences and configuration
 - `notification_history` - Push notification audit log (currently notifications are fire-and-forget)
 - `feedback` - User feedback and bug reports

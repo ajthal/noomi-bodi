@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NoomiBodi — Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px 16px 64px;
+      line-height: 1.6;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e0e0e0; background: #121212; }
+      a { color: #a78bfa; }
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 4px; }
+    h2 { font-size: 1.25rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    @media (prefers-color-scheme: dark) { h2 { border-color: #333; } }
+    p, li { font-size: 0.95rem; }
+    ul { padding-left: 1.25rem; }
+    .effective { color: #666; font-size: 0.85rem; }
+    @media (prefers-color-scheme: dark) { .effective { color: #999; } }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 8px 10px; border: 1px solid #ddd; }
+    @media (prefers-color-scheme: dark) { th, td { border-color: #333; } }
+    th { background: #f5f5f5; font-weight: 600; }
+    @media (prefers-color-scheme: dark) { th { background: #1e1e1e; } }
+  </style>
+</head>
+<body>
+
+<h1>NoomiBodi Privacy Policy</h1>
+<p class="effective">Effective date: March 25, 2026</p>
+
+<p>NoomiBodi ("we", "us", "the app") is an AI-powered nutrition tracking application. This policy explains what information we collect, how we use it, and what choices you have.</p>
+
+<h2>1. Information We Collect</h2>
+
+<h3>Account information</h3>
+<ul>
+  <li>Email address and password (email sign-up), or identity tokens when you sign in with Apple or Google.</li>
+  <li>Username, display name, bio, and profile picture.</li>
+</ul>
+
+<h3>Health &amp; body data</h3>
+<ul>
+  <li>Age, gender, height, and weight.</li>
+  <li>Nutrition goals (lose/maintain/gain weight, target weight, calorie and macro targets).</li>
+  <li>Daily meal logs (meal name, calories, protein, carbs, fat, notes, timestamps).</li>
+  <li>Weight logs (weight, timestamps, notes).</li>
+  <li>Saved meals and meal plans.</li>
+</ul>
+
+<h3>Photos</h3>
+<ul>
+  <li>Meal photos you take or select are sent to the AI service for nutritional analysis and stored with your meal log.</li>
+  <li>Profile pictures are uploaded to our cloud storage and publicly accessible via URL.</li>
+</ul>
+
+<h3>AI interactions</h3>
+<ul>
+  <li>Chat messages and meal descriptions you send to the AI assistant.</li>
+  <li>We log metadata for each AI request (model used, token counts, latency, success/failure) but do not store the full content of your conversations on our servers.</li>
+</ul>
+
+<h3>Device information</h3>
+<ul>
+  <li>Push notification tokens (Firebase Cloud Messaging) to deliver notifications to your device.</li>
+  <li>We do not collect advertising identifiers, device model, or precise location.</li>
+</ul>
+
+<h2>2. How We Use Your Information</h2>
+
+<table>
+  <tr><th>Purpose</th><th>Data used</th></tr>
+  <tr><td>Provide nutrition tracking</td><td>Meal logs, weight logs, goals, saved meals</td></tr>
+  <tr><td>AI-powered features (meal analysis, plan generation, insights, chat)</td><td>Photos, health data, chat messages — sent to Anthropic's Claude API</td></tr>
+  <tr><td>Social features (friends, leaderboard, shared meals, activity feed)</td><td>Username, display name, profile picture, streak milestones, shared meals, weekly adherence</td></tr>
+  <tr><td>Push notifications</td><td>Device tokens, friend request/acceptance events, shared meal events, streak milestones</td></tr>
+  <tr><td>Account authentication</td><td>Email, password hash, or third-party identity tokens</td></tr>
+  <tr><td>Offline support</td><td>Meal/weight data cached locally until synced</td></tr>
+  <tr><td>iOS home screen widget</td><td>Today's calorie/macro totals stored in on-device App Group storage</td></tr>
+</table>
+
+<h2>3. Third-Party Services</h2>
+
+<p>We rely on the following third-party services to operate the app:</p>
+
+<table>
+  <tr><th>Service</th><th>Purpose</th><th>Data shared</th></tr>
+  <tr><td><a href="https://supabase.com/privacy">Supabase</a></td><td>Backend, authentication, database, file storage</td><td>All account and app data described above</td></tr>
+  <tr><td><a href="https://www.anthropic.com/privacy">Anthropic (Claude API)</a></td><td>AI chat, meal photo analysis, plan generation, insights</td><td>Chat messages, meal photos (base64), health context for personalized responses</td></tr>
+  <tr><td><a href="https://firebase.google.com/support/privacy">Firebase Cloud Messaging</a></td><td>Push notifications</td><td>Device token, notification payload (no health data in notification content)</td></tr>
+  <tr><td><a href="https://www.apple.com/legal/privacy/">Apple</a></td><td>Sign in with Apple</td><td>Identity token, name, email (as authorized by you)</td></tr>
+  <tr><td><a href="https://policies.google.com/privacy">Google</a></td><td>Sign in with Google</td><td>Identity token, name, email (as authorized by you)</td></tr>
+</table>
+
+<h3>Your Claude API key</h3>
+<p>If you provide your own Anthropic API key, it is stored <strong>only on your device</strong> (never sent to our servers). AI requests using your key go directly from your device to Anthropic.</p>
+
+<h2>4. Social Features &amp; Data Visible to Others</h2>
+
+<p>When you use social features, other users who are your accepted friends may see:</p>
+<ul>
+  <li>Your username, display name, profile picture, and bio.</li>
+  <li>Streak milestones in the activity feed.</li>
+  <li>Weekly calorie adherence on the leaderboard.</li>
+  <li>Meals you explicitly share with them.</li>
+  <li>Summary stats on your friend profile (streak, adherence, plan summary, weight progress, average macros).</li>
+</ul>
+<p>You can enable <strong>Private mode</strong> in Settings to hide your activity from the leaderboard, activity feed, and friend profile stats. Your username and profile picture remain visible to accepted friends.</p>
+
+<h2>5. Data Storage &amp; Security</h2>
+
+<ul>
+  <li>Server-side data is stored in Supabase (hosted on AWS) with Row Level Security enforcing that users can only access their own data unless explicitly shared.</li>
+  <li>Authentication uses industry-standard JWT tokens with automatic refresh.</li>
+  <li>Passwords are hashed by Supabase Auth (bcrypt); we never store or see plaintext passwords.</li>
+  <li>Profile pictures are stored in a cloud storage bucket. All other images (meal photos) are stored as encoded data within the database.</li>
+  <li>On-device data (chat history, API key, offline cache, widget data) is stored using the device's local storage and is not accessible to other apps.</li>
+</ul>
+
+<h2>6. Data Retention</h2>
+
+<ul>
+  <li>Your data is retained as long as your account is active.</li>
+  <li>You can delete individual meal logs, weight logs, and saved meals at any time from within the app.</li>
+  <li>You can use the <strong>Reset Profile</strong> option in Settings to clear your profile, plans, logs, and insights from our servers.</li>
+  <li>Push notification tokens are removed when you sign out and cleaned up automatically when devices are reused across accounts.</li>
+</ul>
+
+<h2>7. Your Choices &amp; Rights</h2>
+
+<ul>
+  <li><strong>Privacy toggle:</strong> Enable Private mode to hide your activity from friends.</li>
+  <li><strong>Push notifications:</strong> You can disable notifications in your device's Settings at any time.</li>
+  <li><strong>Profile reset:</strong> Clears your profile, plans, daily logs, weight logs, and AI insights from our servers.</li>
+  <li><strong>Account deletion:</strong> Contact us to request full account deletion, including all associated data.</li>
+  <li><strong>Data export:</strong> Contact us to request a copy of your data.</li>
+</ul>
+
+<h2>8. Children's Privacy</h2>
+
+<p>NoomiBodi is not intended for children under 13. We do not knowingly collect personal information from children. If you believe a child has provided us with their data, please contact us and we will delete it.</p>
+
+<h2>9. Changes to This Policy</h2>
+
+<p>We may update this policy from time to time. We will notify you of material changes through the app or by updating the effective date above. Continued use of the app after changes constitutes acceptance of the updated policy.</p>
+
+<h2>10. Contact Us</h2>
+
+<p>If you have questions about this privacy policy or your data, contact us at:</p>
+<p><strong>Email:</strong> <a href="mailto:noomibodi@gmail.com">noomibodi@gmail.com</a></p>
+
+</body>
+</html>

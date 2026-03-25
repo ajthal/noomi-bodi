@@ -430,4 +430,18 @@ export const createStyles = (colors: ThemeColors, isDark: boolean) =>
       color: '#4F46E5',
       fontWeight: '500',
     },
+
+    signInLink: {
+      marginTop: 16,
+      alignItems: 'center',
+      paddingVertical: 4,
+    },
+    signInLinkText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    signInLinkTextBold: {
+      color: '#7C3AED',
+      fontWeight: '600',
+    },
   });
