@@ -116,9 +116,96 @@ async function logAiUsage(params: {
   }
 }
 
+// ── Context window management ─────────────────────────────────────────
+
+/** Rough token estimate: ~4 chars per token for English text. */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function estimateMessageTokens(messages: ChatMessage[]): number {
+  return messages.reduce((sum, m) => {
+    let tokens = estimateTokens(m.content);
+    if (m.imageBase64) tokens += 1600; // ~1600 tokens for a typical image
+    return sum + tokens;
+  }, 0);
+}
+
+const CONTEXT_BUDGET_TOKENS = 150_000;
+const SYSTEM_PROMPT_RESERVE = 8_000;
+/**
+ * Trim messages to fit within the context budget, keeping the most recent ones.
+ * Returns the messages to send and the messages that were dropped (for summarization).
+ */
+export function windowMessages(
+  messages: ChatMessage[],
+  systemPromptTokens: number,
+): { kept: ChatMessage[]; dropped: ChatMessage[] } {
+  const budget = CONTEXT_BUDGET_TOKENS - systemPromptTokens - SYSTEM_PROMPT_RESERVE;
+  let total = 0;
+  let cutIndex = 0;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    let tokens = estimateTokens(messages[i].content);
+    if (messages[i].imageBase64) tokens += 1600;
+    if (total + tokens > budget) {
+      cutIndex = i + 1;
+      break;
+    }
+    total += tokens;
+  }
+
+  return {
+    kept: messages.slice(cutIndex),
+    dropped: messages.slice(0, cutIndex),
+  };
+}
+
+/**
+ * Ask Claude to produce a concise summary of dropped messages.
+ * The summary is injected into the system prompt so context isn't fully lost.
+ */
+export async function summarizeDroppedMessages(
+  droppedMessages: ChatMessage[],
+  existingSummary: string | null,
+  apiKey: string,
+): Promise<string> {
+  const transcript = droppedMessages
+    .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 500)}`)
+    .join('\n');
+
+  const prompt = existingSummary
+    ? `Here is an existing summary of an earlier part of the conversation:\n\n${existingSummary}\n\nHere are additional messages that need to be incorporated into the summary:\n\n${transcript}\n\nProduce an updated, concise summary (max 300 words) that captures all key facts, preferences, decisions, and meal/nutrition details mentioned. Focus on information the user would expect you to remember.`
+    : `Here is the beginning of a conversation between a user and their AI nutrition coach:\n\n${transcript}\n\nProduce a concise summary (max 300 words) that captures all key facts, preferences, decisions, and meal/nutrition details mentioned. Focus on information the user would expect you to remember.`;
+
+  try {
+    const response = await axios.post(
+      API_URL,
+      {
+        model: CLAUDE_MODEL,
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+        system: 'You are a summarization assistant. Produce only the summary, nothing else.',
+      },
+      {
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      },
+    );
+    const block = response.data.content?.[0];
+    return block?.type === 'text' ? block.text : existingSummary ?? '';
+  } catch {
+    return existingSummary ?? '';
+  }
+}
+
 // ── Core API call ─────────────────────────────────────────────────────
 
-const CLAUDE_MODEL = 'claude-sonnet-4-5-20250929';
+const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const API_URL = 'https://api.anthropic.com/v1/messages';
 
 const MAX_TOOL_ROUNDS = 5;

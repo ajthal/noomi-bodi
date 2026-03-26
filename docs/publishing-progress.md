@@ -73,6 +73,10 @@ See `docs/deployment-guide.md` for the full step-by-step guide.
 - **Sign-in back arrow**: Added conditional back arrow on `SignInScreen` (only visible when navigated from onboarding link, so users aren't stuck if they tapped it by accident)
 - **Copy updates**: Changed "Profile tab" → "Profile settings" across 4 occurrences in 3 files to reflect the current navigation structure
 
+### AI / Chat improvements
+- **Model upgrade**: Switched from `claude-sonnet-4-5-20250929` to `claude-sonnet-4-6` (1M context window, improved intelligence, same pricing)
+- **Context window management**: Added message windowing with rolling conversation summary so long chats don't hit the context limit. Oldest messages are trimmed from the API call but summarized into a recap that persists in the system prompt. Full chat history remains visible in the UI.
+
 ### Documentation created
 - `docs/deployment-guide.md` — full step-by-step guide for environment setup and App Store deployment
 - `docs/privacy-policy.html` — comprehensive privacy policy covering all data collection, third-party services, social features, and user controls

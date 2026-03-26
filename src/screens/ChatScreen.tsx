@@ -27,6 +27,9 @@ import {
   stripPlanMarkers,
   parseSaveMealSuggestion,
   stripSaveMealMarkers,
+  windowMessages,
+  summarizeDroppedMessages,
+  type ChatMessage,
 } from '../services/claude';
 import {
   saveMessages,
@@ -37,6 +40,8 @@ import {
   loadUserProfile,
   saveUserProfile,
   UserProfile,
+  saveConversationSummary,
+  loadConversationSummary,
 } from '../services/storage';
 import { logMeal, getDailyTotals, getTodaysMeals } from '../services/mealLog';
 import { saveMeal } from '../services/savedMeals';
@@ -135,15 +140,17 @@ function useChatState() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [conversationSummary, setConversationSummary] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadMessages(), getApiKey(), loadUserProfile()]).then(
-      ([savedMessages, storedKey, storedProfile]) => {
+    Promise.all([loadMessages(), getApiKey(), loadUserProfile(), loadConversationSummary()]).then(
+      ([savedMessages, storedKey, storedProfile, storedSummary]) => {
         if (cancelled) return;
         setMessages(savedMessages);
         setApiKey(storedKey);
         setProfile(storedProfile);
+        setConversationSummary(storedSummary);
         setReady(true);
       },
     );
@@ -152,7 +159,7 @@ function useChatState() {
     };
   }, []);
 
-  return { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile };
+  return { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile, conversationSummary, setConversationSummary };
 }
 
 // ── Props ─────────────────────────────────────────────────────────────
@@ -180,7 +187,7 @@ export default function ChatScreen({
     index: number;
     data: MealData;
   } | null>(null);
-  const { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile } =
+  const { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile, conversationSummary, setConversationSummary } =
     useChatState();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -290,22 +297,36 @@ export default function ChatScreen({
         getDailyTotals(),
       ]);
 
-      const apiMessages = newMessages.map((msg, i) => {
+      let systemPrompt = buildChatSystemPrompt(profile, { meals: todayMeals, totals: todayTotals });
+
+      const allApiMessages: ChatMessage[] = newMessages.map((msg, i) => {
         if (i === newMessages.length - 1 && image) {
           return {
-            role: msg.role,
+            role: msg.role as 'user' | 'assistant',
             content: msg.text,
             imageBase64: image.base64,
             imageMimeType: image.mimeType,
           };
         }
-        return { role: msg.role, content: msg.text };
+        return { role: msg.role as 'user' | 'assistant', content: msg.text };
       });
 
+      const systemTokens = Math.ceil(systemPrompt.length / 4);
+      const { kept, dropped } = windowMessages(allApiMessages, systemTokens);
+
+      if (dropped.length > 0 && apiKey) {
+        const newSummary = await summarizeDroppedMessages(dropped, conversationSummary, apiKey);
+        setConversationSummary(newSummary);
+        saveConversationSummary(newSummary);
+        systemPrompt += `\n\n**Summary of earlier conversation**\n${newSummary}`;
+      } else if (conversationSummary) {
+        systemPrompt += `\n\n**Summary of earlier conversation**\n${conversationSummary}`;
+      }
+
       const rawResponse = await sendMessageToClaude(
-        apiMessages,
+        kept,
         apiKey,
-        buildChatSystemPrompt(profile, { meals: todayMeals, totals: todayTotals }),
+        systemPrompt,
       );
       setMessages(await processResponse(rawResponse, newMessages));
     } catch (error) {

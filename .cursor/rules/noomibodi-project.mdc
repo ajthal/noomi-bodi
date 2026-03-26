@@ -11,7 +11,7 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 
 ### Screens (src/screens/)
 - **QuickLogPage** — daily calories/macros, add meal photo, weight log, weekly weight chart, smart suggestions, today's meals. Registered directly as the "Home" page in the flat pager.
-- **ChatScreen** — conversational interface with Claude, quick action chips, markdown rendering. Pushable RootStack screen accessed via TopBar chat bubble icon; includes themed back button when standalone.
+- **ChatScreen** — conversational interface with Claude (Sonnet 4.6), quick action chips, markdown rendering, context window management with rolling conversation summary. Pushable RootStack screen accessed via TopBar chat bubble icon; includes themed back button when standalone.
 - **MealsScreen** — saved meals library with search, sort, macro filters, AI meal builder, share-with-friend via long-press. Registered as "MyMeals" page in the flat pager.
 - **SharedMealsPage** — "Share a Meal" button (meal picker → friend picker flow), received meals inbox with add-to-library, collapsible "Shared by You" section showing sent meals, unread indicators. Registered as "SharedMeals" page; reports unread count to MainTabs for SubTabBar badge.
 - **ReportsScreen** — calorie/weight charts with CustomBarChart, goal lines, interactive tooltips. Registered as "Reports" page.
@@ -28,11 +28,11 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **EmailVerificationScreen** — blocks entry to main app until email is verified; polls session every 5s, has resend with 60s cooldown; skipped for social sign-ins (Google/Apple)
 
 ### Services (src/services/)
-- **claude.ts** — Anthropic Messages API integration, system prompts, response parsing, AI usage logging
+- **claude.ts** — Anthropic Messages API integration (model: `claude-sonnet-4-6`), system prompts, response parsing, AI usage logging, context window management (`windowMessages` trims oldest messages when approaching token budget, `summarizeDroppedMessages` generates a rolling conversation summary from trimmed messages)
 - **claudeTools.ts** — RAG tool definitions + execution for Claude function calling
 - **mealLog.ts** — daily_logs CRUD (Supabase + offline queue); triggers streak milestone check after successful log
 - **savedMeals.ts** — saved_meals CRUD + `clearAllSavedMeals()` for profile reset
-- **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans; `UserProfile` includes social fields (username, displayName, profilePictureUrl, bio, isPrivate); `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights
+- **storage.ts** — AsyncStorage (API key, messages, conversation summary) + Supabase profiles/plans; `UserProfile` includes social fields (username, displayName, profilePictureUrl, bio, isPrivate); `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights; `clearMessages()` also clears conversation summary
 - **profileService.ts** — username validation, availability check, user search via `public_profiles` table (ILIKE on username/display_name), admin search via `profiles` (includes email/role), profile picture upload to Supabase Storage, partial profile field updates, `suggestUsernameFromEmail()`
 - **friendships.ts** — friend request CRUD (send/accept/decline/remove); accept/decline restricted to recipient via `following_id` filter; queries for accepted friends, pending received/sent, friendship status check between two users
 - **activityFeed.ts** — streak milestone insertion, duplicate checking, friend activity feed query (RLS handles privacy); `checkAndRecordMilestone()` for auto-logging milestones
@@ -130,6 +130,7 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 - All error messages shown to users go through `getUserFriendlyError()` — never show raw error messages
 - Tab-switching uses `useStaleFetch` to avoid redundant re-fetches; data stays visible while background refresh runs
 - Claude responses parsed with markers: `[MEAL_DATA]`, `[PLAN_START]`, `[SAVE_MEAL]`, `[PORTION]`
+- **Context window management**: `windowMessages()` estimates token count (~4 chars/token, images ~1600 tokens) and trims oldest messages when approaching 150K token budget. Dropped messages are summarized via `summarizeDroppedMessages()` into a rolling recap injected into the system prompt. Summary persists in AsyncStorage (`@noomibodi_conversation_summary`). Full message history stays in the UI; only the API call is windowed.
 - AI usage logged to `ai_usage_logs` table after every Claude API call
 - Onboarding and auth screens always follow system theme (ThemeProvider defaults to `mode: 'system'`)
 - Primary buttons invert in dark mode: white bg with dark text (light mode: dark bg with white text)
