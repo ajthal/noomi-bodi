@@ -259,8 +259,8 @@ export default function ProfilePage(): React.JSX.Element {
       <UpdatePlanModal
         visible={updatePlanVisible}
         onClose={() => setUpdatePlanVisible(false)}
-        onPlanUpdated={(newPlan) => {
-          if (profile) setProfile({ ...profile, plan: newPlan });
+        onPlanUpdated={() => {
+          loadData(true);
         }}
       />
       </ScrollView>

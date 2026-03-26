@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -25,8 +23,9 @@ import {
 import {
   getApiKey,
   loadUserProfile,
-  saveUserProfile,
-  UserProfile,
+  saveUserPlan,
+  estimateDailyGoals,
+  parseMacrosFromPlanText,
 } from '../services/storage';
 
 interface Props {
@@ -84,8 +83,9 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
       const profile = await loadUserProfile();
       if (!profile) throw new Error('No profile found');
 
-      const updatedProfile: UserProfile = { ...profile, plan: preview };
-      await saveUserProfile(updatedProfile);
+      const fallbackGoals = estimateDailyGoals(profile);
+      const goals = parseMacrosFromPlanText(preview, fallbackGoals) ?? fallbackGoals;
+      await saveUserPlan(profile, preview, goals);
       onPlanUpdated(preview);
       handleReset();
       onClose();
@@ -110,10 +110,6 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
 
   return (
     <BottomSheet visible={visible} onClose={handleClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={80}
-      >
         <View style={s.container}>
           <View style={s.header}>
             <Text style={[s.title, { color: colors.text }]}>Update Your Plan</Text>
@@ -209,7 +205,6 @@ export default function UpdatePlanModal({ visible, onClose, onPlanUpdated }: Pro
             </>
           )}
         </View>
-      </KeyboardAvoidingView>
     </BottomSheet>
   );
 }

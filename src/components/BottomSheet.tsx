@@ -7,6 +7,7 @@ import {
   PanResponder,
   StyleSheet,
   Platform,
+  KeyboardAvoidingView,
   useWindowDimensions,
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
@@ -104,7 +105,10 @@ export default function BottomSheet({ visible, onClose, children }: Props) {
 
   return (
     <Modal visible={visible} animationType="none" transparent statusBarTranslucent>
-      <View style={s.root}>
+      <KeyboardAvoidingView
+        style={s.root}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <Animated.View style={[s.backdrop, { opacity: backdropOpacity }]}>
           <TouchableWithoutFeedback onPress={dismiss}>
             <View style={s.backdropFill} />
@@ -126,7 +130,7 @@ export default function BottomSheet({ visible, onClose, children }: Props) {
           </View>
           {children}
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
