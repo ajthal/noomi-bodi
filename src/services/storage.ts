@@ -103,6 +103,48 @@ export function estimateDailyGoals(profile: UserProfile): MacroGoals {
   };
 }
 
+/**
+ * Extract calorie/macro targets from AI-generated plan text.
+ * Returns a full MacroGoals if at least calories were found, null otherwise.
+ * Falls back to `estimateDailyGoals` for any missing individual macros.
+ */
+export function parseMacrosFromPlanText(
+  planText: string,
+  fallback: MacroGoals,
+): MacroGoals | null {
+  let calories: number | undefined;
+  let protein: number | undefined;
+  let carbs: number | undefined;
+  let fat: number | undefined;
+
+  const calMatch = planText.match(/~?\s*([\d,]+)\s*(?:calories?|cal|kcal)\b/i);
+  if (calMatch) calories = parseInt(calMatch[1].replace(/,/g, ''), 10);
+
+  const proteinMatch =
+    planText.match(/protein[:\s|]*\*{0,2}\s*([\d]+)\s*g/i) ||
+    planText.match(/([\d]+)\s*g\s*(?:of\s+)?protein/i);
+  if (proteinMatch) protein = parseInt(proteinMatch[1], 10);
+
+  const carbsMatch =
+    planText.match(/carb(?:s|ohydrates?)?[:\s|]*\*{0,2}\s*([\d]+)\s*g/i) ||
+    planText.match(/([\d]+)\s*g\s*(?:of\s+)?carb(?:s|ohydrates?)?/i);
+  if (carbsMatch) carbs = parseInt(carbsMatch[1], 10);
+
+  const fatMatch =
+    planText.match(/fat[:\s|]*\*{0,2}\s*([\d]+)\s*g/i) ||
+    planText.match(/([\d]+)\s*g\s*(?:of\s+)?fat/i);
+  if (fatMatch) fat = parseInt(fatMatch[1], 10);
+
+  if (!calories || calories < 500 || calories > 10000) return null;
+
+  return {
+    calories,
+    protein: protein && protein > 0 ? protein : fallback.protein,
+    carbs: carbs && carbs > 0 ? carbs : fallback.carbs,
+    fat: fat && fat > 0 ? fat : fallback.fat,
+  };
+}
+
 // ── Supabase helpers ──────────────────────────────────────────────────
 
 async function getUserId(): Promise<string | null> {
@@ -254,6 +296,43 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
   if (planError) {
     console.error('Error saving plan:', planError);
     throw planError;
+  }
+}
+
+/**
+ * Save only the plan text and macro goals to `user_plans` without
+ * touching the `profiles` table. Use this when the plan changes but
+ * demographic / social profile fields haven't.
+ */
+export async function saveUserPlan(
+  profile: UserProfile,
+  planText: string,
+  goals: MacroGoals,
+): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) throw new Error('Not authenticated');
+
+  await supabase
+    .from('user_plans')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('is_active', true);
+
+  const { error } = await supabase.from('user_plans').insert({
+    user_id: userId,
+    goal_type: profile.goal,
+    target_weight_kg: profile.targetWeightKg,
+    daily_calories: goals.calories,
+    daily_protein_g: goals.protein,
+    daily_carbs_g: goals.carbs,
+    daily_fat_g: goals.fat,
+    plan_details: planText,
+    is_active: true,
+  });
+
+  if (error) {
+    console.error('Error saving plan:', error);
+    throw error;
   }
 }
 

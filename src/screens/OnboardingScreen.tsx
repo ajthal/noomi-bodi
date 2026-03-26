@@ -25,6 +25,8 @@ import {
   saveUserProfile,
   getApiKey,
   saveApiKey,
+  estimateDailyGoals,
+  parseMacrosFromPlanText,
 } from '../services/storage';
 import { generatePlanWithClaude } from '../services/claude';
 import { feetInchesToCm, lbsToKg } from '../utils/units';
@@ -410,10 +412,14 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete, onSignI
         plan = generateBasicPlan(baseProfile);
       }
 
+      const fallbackGoals = estimateDailyGoals(baseProfile);
+      const parsedGoals = parseMacrosFromPlanText(plan, fallbackGoals);
+
       const profileToSave: UserProfile = {
         ...baseProfile,
         plan,
         username: usernameInput.trim() || null,
+        ...(parsedGoals ? { dailyGoals: parsedGoals } : {}),
       };
 
       await saveUserProfile(profileToSave);

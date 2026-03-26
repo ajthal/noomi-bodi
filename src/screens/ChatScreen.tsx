@@ -38,7 +38,9 @@ import {
   MealData,
   getApiKey,
   loadUserProfile,
-  saveUserProfile,
+  saveUserPlan,
+  estimateDailyGoals,
+  parseMacrosFromPlanText,
   UserProfile,
   saveConversationSummary,
   loadConversationSummary,
@@ -247,8 +249,14 @@ export default function ChatScreen({
       const planText = parsePlanText(rawResponse);
       if (planText && currentProfile) {
         displayText = stripPlanMarkers(displayText);
-        const updatedProfile: UserProfile = { ...currentProfile, plan: planText };
-        await saveUserProfile(updatedProfile);
+        const fallbackGoals = estimateDailyGoals(currentProfile);
+        const parsedGoals = parseMacrosFromPlanText(planText, fallbackGoals) ?? fallbackGoals;
+        await saveUserPlan(currentProfile, planText, parsedGoals);
+        const updatedProfile: UserProfile = {
+          ...currentProfile,
+          plan: planText,
+          dailyGoals: parsedGoals,
+        };
         setProfile(updatedProfile);
         currentProfile = updatedProfile;
       }
