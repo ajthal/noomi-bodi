@@ -47,7 +47,7 @@ See `docs/deployment-guide.md` for the full step-by-step guide.
 - [x] 4.7 Version set to 1.0.0, build 1; `package.json` synced to 1.0.0
 - [x] 4.8 Updated dev Firebase iOS app to match new bundle ID; refreshed both plists
 
-## Part 5: App Store Connect Setup — IN PROGRESS
+## Part 5: App Store Connect Setup — DONE (for internal TestFlight)
 
 - [x] 5.1 Created app record in App Store Connect
 - [x] 5.2 Privacy policy written, hosted on GitHub Pages: https://ajthal.github.io/noomibodi-legal/privacy-policy.html
@@ -55,14 +55,17 @@ See `docs/deployment-guide.md` for the full step-by-step guide.
 - [ ] 5.4 Fill in App Store metadata (description, screenshots, keywords, categories) — needed for external TestFlight
 - [ ] 5.5 Create demo account in production Supabase for App Review team
 
-## Part 6: Build, Archive & Upload — NOT STARTED
+## Part 6: Build, Archive & Upload — DONE (internal TestFlight)
 
-- [ ] 6.1 Pre-flight checklist (verify prod env, plist, bundle ID, entitlements, etc.)
-- [ ] 6.2 Test app with `npm run ios:prod` on a real device
-- [ ] 6.3 Archive in Xcode (Any iOS Device arm64 → Product → Archive)
-- [ ] 6.4 Upload to App Store Connect via Organizer
-- [ ] 6.5 Set up internal TestFlight testing group
-- [ ] 6.6 (Optional) Submit for external TestFlight Beta App Review
+- [x] 6.1 Pre-flight checklist (verified prod Supabase URL in JS bundle, prod Firebase plist, bundle ID, entitlements)
+- [x] 6.2 Archive in Xcode (Any iOS Device arm64 → Product → Archive)
+- [x] 6.3 Fixed iPad icon validation error (152x152 + 167x167 were missing from `Contents.json`)
+- [x] 6.4 Uploaded to TestFlight Internal Only via Xcode Organizer
+- [x] 6.5 Answered encryption compliance (No for France distribution — only uses standard HTTPS/TLS)
+- [x] 6.6 Configured Apple Sign-In auth provider on production Supabase (bundle ID `com.athalhei.noomibodi`)
+- [x] 6.7 Set admin role on production account
+- [ ] 6.8 (Optional) Set up internal TestFlight testing group for additional testers
+- [ ] 6.9 (Optional) Submit for external TestFlight Beta App Review
 
 ---
 
@@ -86,6 +89,13 @@ See `docs/deployment-guide.md` for the full step-by-step guide.
 - `docs/database_schema.md` — corrected to match live dev DB (`public_profiles` is a table with sync trigger, added `meal_plans`, fixed data types, refined RLS policy descriptions)
 - `.cursor/rules/noomibodi-project.mdc` — added environment management section, launch screen branding, onboarding sign-in flow, updated DB schema descriptions
 
+### Deployment fixes (during TestFlight upload)
+- **iPad icons**: `Contents.json` was missing iPad idiom entries (files existed but weren't declared); added all required iPad sizes (20–167px)
+- **Xcode Archive scheme**: Added pre-action script `export APP_ENV=production` to ensure JS bundle uses production env
+- **Apple Sign-In**: Configured production Supabase Apple auth provider with bundle ID `com.athalhei.noomibodi` (was causing "unacceptable audience" error)
+- **Admin role**: Set production account to admin via SQL
+
 ### Infrastructure
 - Privacy policy hosted on GitHub Pages (`ajthal/noomibodi-legal` repo): https://ajthal.github.io/noomibodi-legal/privacy-policy.html
 - Contact email: noomibodi@gmail.com
+- **First TestFlight build**: v1.0 (build 1) uploaded via TestFlight Internal Only

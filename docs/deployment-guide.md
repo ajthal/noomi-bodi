@@ -85,7 +85,10 @@ In the **production** Supabase dashboard → **Authentication → Providers**:
 1. **Email:** Should be enabled by default
 2. **Apple:**
    - Enable it
-   - Add your Apple Services ID and secret (same ones from dev — they're tied to your Apple Developer account, not Supabase)
+   - **Client ID:** Set to your iOS bundle ID (`com.athalhei.noomibodi`)
+   - Also add the bundle ID to **Authorized Client IDs** if available
+   - Add your Secret Key (.p8 contents), Key ID, and Team ID
+   - **Important:** The Apple id_token audience is your bundle ID — if this doesn't match Supabase's config, you'll get "unacceptable audience in id_token" errors
 3. **Google:**
    - Enable it
    - Add your Google OAuth Client ID and secret (same ones from dev)
@@ -236,6 +239,11 @@ The default `org.reactjs.native.example.NoomiBodi` must be changed to something 
 6. Change its Bundle Identifier to: `com.yourname.noomibodi.widget`
 7. Make sure both targets have your **Team** selected under **Signing & Capabilities**
 
+**Important:** After changing the bundle ID, update it everywhere:
+- Firebase iOS app (may need to remove and re-add with new bundle ID)
+- Supabase Apple auth provider (Client ID + Authorized Client IDs)
+- Apple Developer Portal (App ID capabilities)
+
 ### 4.2 Register App IDs in Apple Developer Portal
 
 If Xcode's automatic signing doesn't create them:
@@ -278,7 +286,19 @@ The widget extension targets iOS 26.2 but the main app targets iOS 15.1. Set the
 
 Open `ios/NoomiBodi/LaunchScreen.storyboard` and replace "Powered by React Native" with your own branding or remove it.
 
-### 4.7 Set version numbers
+### 4.7 Add iPad icons to asset catalog
+
+Even if your app is iPhone-only, Apple requires iPad icon sizes in the asset catalog. Make sure `ios/NoomiBodi/Images.xcassets/AppIcon.appiconset/Contents.json` includes entries for `ipad` idiom:
+
+- 20x20 @1x (20.png), 20x20 @2x (40.png)
+- 29x29 @1x (29.png), 29x29 @2x (58.png)
+- 40x40 @1x (40.png), 40x40 @2x (80.png)
+- 76x76 @1x (76.png), 76x76 @2x (152.png)
+- 83.5x83.5 @2x (167.png) — iPad Pro
+
+Without these, upload validation will fail with "Missing required icon file" errors.
+
+### 4.8 Set version numbers
 
 1. In Xcode → NoomiBodi target → General → Identity:
    - **Version (Marketing):** `1.0.0`
@@ -339,6 +359,9 @@ For internal TestFlight (up to 100 testers by Apple ID), you don't need any of t
 - [ ] Widget deployment target is ≤ 17.0
 - [ ] Launch screen is branded
 - [ ] Version + build numbers are set
+- [ ] iPad icons are declared in `Contents.json` (see 4.7)
+- [ ] Archive scheme has `APP_ENV=production` pre-action (see 6.3)
+- [ ] Supabase Apple auth provider has correct bundle ID (see 1.6)
 - [ ] You've tested the app with `npm run ios:prod` on a real device
 
 ### 6.2 Build the JS bundle with production env
@@ -351,20 +374,24 @@ APP_ENV=production npx react-native start --reset-cache
 ### 6.3 Archive in Xcode
 
 1. Open `ios/NoomiBodi.xcworkspace`
-2. Select **Any iOS Device (arm64)** as the build destination (not a simulator)
-3. **Product → Archive**
-4. Wait for the build to complete (this may take several minutes)
-5. The Organizer window opens automatically
+2. **Set up the Archive pre-action** (one-time): Product → Scheme → Edit Scheme → expand **Archive** → click **Pre-actions** → click **+** → New Run Script Action → set "Provide build settings from" to **NoomiBodi** → enter: `export APP_ENV=production`
+3. Select **Any iOS Device (arm64)** as the build destination (not a simulator)
+4. **Product → Archive**
+5. Wait for the build to complete (this may take several minutes)
+6. The Organizer window opens automatically
 
-### 6.4 Upload to App Store Connect
+**Verify the bundle:** Right-click archive → Show in Finder → Show Package Contents → `Products/Applications/NoomiBodi.app/main.jsbundle`. Search for your Supabase URL to confirm it's the production one.
+
+### 6.4 Upload to TestFlight
 
 1. In the Organizer, select your archive
 2. Click **Distribute App**
-3. Choose **App Store Connect**
-4. Choose **Upload** (not Export)
-5. Follow the wizard — keep defaults (strip symbols, upload symbols)
-6. Click **Upload**
-7. Wait for it to finish uploading and processing (~5-10 minutes)
+3. Choose **TestFlight Internal Only** (for quick internal testing, skips Beta App Review) or **App Store Connect** (for both internal + external TestFlight and eventual App Store release)
+4. Click **Distribute**
+5. Wait for it to finish uploading and processing (~5-10 minutes)
+6. **Encryption compliance:** If asked about France distribution, select **No** if you only use standard HTTPS/TLS (avoids export compliance paperwork)
+
+**Note:** The dSYM warnings for React.framework, ReactNativeDependencies.framework, and hermesvm.framework are expected and don't block the upload.
 
 ### 6.5 TestFlight
 
