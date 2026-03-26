@@ -5,6 +5,7 @@ import { cacheProfile, getCachedProfile } from './offlineStore';
 // ── AsyncStorage keys (local-only data) ──────────────────────────────
 
 const MESSAGES_KEY = '@noomibodi_messages';
+const CONVERSATION_SUMMARY_KEY = '@noomibodi_conversation_summary';
 const API_KEY_KEY = '@noomibodi_api_key';
 const LEGACY_API_KEY = 'claude_api_key';
 
@@ -132,8 +133,36 @@ export async function loadMessages(): Promise<Message[]> {
 export async function clearMessages(): Promise<void> {
   try {
     await AsyncStorage.removeItem(MESSAGES_KEY);
+    await AsyncStorage.removeItem(CONVERSATION_SUMMARY_KEY);
   } catch (error) {
     console.error('Error clearing messages:', error);
+  }
+}
+
+// ── Conversation summary (AsyncStorage — rolling recap of trimmed messages) ──
+
+export async function saveConversationSummary(summary: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CONVERSATION_SUMMARY_KEY, summary);
+  } catch (error) {
+    console.error('Error saving conversation summary:', error);
+  }
+}
+
+export async function loadConversationSummary(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(CONVERSATION_SUMMARY_KEY);
+  } catch (error) {
+    console.error('Error loading conversation summary:', error);
+    return null;
+  }
+}
+
+export async function clearConversationSummary(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(CONVERSATION_SUMMARY_KEY);
+  } catch (error) {
+    console.error('Error clearing conversation summary:', error);
   }
 }
 

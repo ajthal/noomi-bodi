@@ -39,6 +39,7 @@ import { createStyles } from './OnboardingScreen.styles.tsx';
 
 interface OnboardingScreenProps {
   onComplete: () => void;
+  onSignIn?: () => void;
 }
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -142,7 +143,7 @@ const generateBasicPlan = (profile: UserProfile): string => {
   ].join('\n');
 };
 
-const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
+const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete, onSignIn }) => {
   const { signUp, signIn, signInWithApple, signInWithGoogle, resetPassword, user } = useAuth();
   const { colors, isDark } = useTheme();
   const styles = React.useMemo(() => createStyles(colors, isDark), [colors, isDark]);
@@ -421,7 +422,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
       if (!usedClaude) {
         Alert.alert(
           'Basic plan created',
-          'For a more tailored AI plan, you can add your Claude API key later in the Profile tab.',
+          'For a more tailored AI plan, you can add your Claude API key later in Profile settings.',
         );
       }
     } catch (error) {
@@ -561,7 +562,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
               <Text style={styles.apiKeyHint}>
                 {apiKeyInput.trim()
                   ? 'Your key will be saved securely on this device.'
-                  : "You can skip this step, but meal photo analysis and AI plans won't be available until you add a key in the Profile tab."}
+                  : "You can skip this step, but meal photo analysis and AI plans won't be available until you add a key in Profile settings."}
               </Text>
             </>
           )}
@@ -943,32 +944,41 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
 
   const renderFooter = () => (
     <View style={styles.footer}>
-      {step === 8 ? (
-        <Pressable
-          style={[
-            styles.primaryButton,
-            styles.primaryButtonFull,
-            isPrimaryDisabled() && styles.primaryButtonDisabled,
-          ]}
-          disabled={isPrimaryDisabled()}
-          onPress={handlePrimaryAction}
-        >
-          <Text style={styles.primaryButtonText}>{renderPrimaryButtonLabel()}</Text>
-        </Pressable>
+      {step === 1 || step === 8 ? (
+        <>
+          <Pressable
+            style={[
+              styles.primaryButton,
+              styles.primaryButtonFull,
+              isPrimaryDisabled() && styles.primaryButtonDisabled,
+            ]}
+            disabled={isPrimaryDisabled()}
+            onPress={handlePrimaryAction}
+          >
+            <Text style={styles.primaryButtonText}>{renderPrimaryButtonLabel()}</Text>
+          </Pressable>
+          {step === 1 && onSignIn && (
+            <Pressable onPress={onSignIn} style={styles.signInLink}>
+              <Text style={styles.signInLinkText}>
+                Returning user? <Text style={styles.signInLinkTextBold}>Sign in here</Text>
+              </Text>
+            </Pressable>
+          )}
+        </>
       ) : (
         <View style={styles.footerButtons}>
           <Pressable
             style={[
               styles.secondaryButton,
-              (step === 1 || isGenerating || authLoading) && styles.secondaryButtonDisabled,
+              (isGenerating || authLoading) && styles.secondaryButtonDisabled,
             ]}
-            disabled={step === 1 || isGenerating || authLoading}
+            disabled={isGenerating || authLoading}
             onPress={goBack}
           >
             <Text
               style={[
                 styles.secondaryButtonText,
-                (step === 1 || isGenerating || authLoading) &&
+                (isGenerating || authLoading) &&
                   styles.secondaryButtonTextDisabled,
               ]}
             >

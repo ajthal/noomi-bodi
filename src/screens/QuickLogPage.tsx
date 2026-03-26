@@ -393,7 +393,7 @@ export default function QuickLogPage({
 
         {!apiKey && (
           <Text style={[s.hintText, { color: colors.error }]}>
-            Add your Claude API key in the Profile tab to get started.
+            Add your Claude API key in Profile settings to get started.
           </Text>
         )}
 
