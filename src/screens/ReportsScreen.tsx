@@ -5,12 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
+  RefreshControl,
   useWindowDimensions,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
+import { LineChart, PieChart } from 'react-native-chart-kit';
+import CustomBarChart from '../components/CustomBarChart';
 import {
   DailySummary,
   OverviewStats,
@@ -32,6 +33,10 @@ import {
 } from '../services/analytics';
 import { kgToLbs } from '../utils/units';
 import { useTheme } from '../contexts/ThemeContext';
+import { SkeletonCard, SkeletonText } from '../components/SkeletonLoader';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 // ── Period filter ────────────────────────────────────────────────────
 
@@ -64,6 +69,8 @@ export default function ReportsScreen(): React.JSX.Element {
   };
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('week');
 
   const [goals, setGoals] = useState<MacroGoals | null>(null);
@@ -75,8 +82,13 @@ export default function ReportsScreen(): React.JSX.Element {
   const [patterns, setPatterns] = useState<DayOfWeekPattern[]>([]);
   const [correlations, setCorrelations] = useState<Correlation[]>([]);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  const fetchAll = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setLoadError(null);
     try {
       const [p, s, w, aw] = await Promise.all([
         loadUserProfile(),
@@ -105,14 +117,25 @@ export default function ReportsScreen(): React.JSX.Element {
       }
     } catch (e) {
       console.error('Reports fetch error:', e);
+      setLoadError(getUserFriendlyError(e));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [period]);
 
+  const { fetchIfStale, forceFetch, markStale } = useStaleFetch(fetchAll, 60_000);
+
   useEffect(() => {
-    if (isFocused) fetchAll();
-  }, [isFocused, fetchAll]);
+    if (isFocused) fetchIfStale();
+  }, [isFocused, fetchIfStale]);
+
+  // Period change should invalidate staleness and re-fetch
+  useEffect(() => {
+    markStale();
+    fetchAll(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
   // ── Derived data ───────────────────────────────────────────────────
 
@@ -142,10 +165,12 @@ export default function ReportsScreen(): React.JSX.Element {
     const avgP = summaries.reduce((a, s) => a + s.protein, 0) / n;
     const avgC = summaries.reduce((a, s) => a + s.carbs, 0) / n;
     const avgF = summaries.reduce((a, s) => a + s.fat, 0) / n;
+    const total = avgP + avgC + avgF;
+    const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0;
     return [
-      { name: 'Protein', grams: Math.round(avgP), color: PIE_COLORS[0], legendFontColor: colors.text, legendFontSize: 13 },
-      { name: 'Carbs', grams: Math.round(avgC), color: PIE_COLORS[1], legendFontColor: colors.text, legendFontSize: 13 },
-      { name: 'Fat', grams: Math.round(avgF), color: PIE_COLORS[2], legendFontColor: colors.text, legendFontSize: 13 },
+      { name: `Protein ${pct(avgP)}%`, grams: Math.round(avgP), color: PIE_COLORS[0], legendFontColor: colors.text, legendFontSize: 13 },
+      { name: `Carbs ${pct(avgC)}%`, grams: Math.round(avgC), color: PIE_COLORS[1], legendFontColor: colors.text, legendFontSize: 13 },
+      { name: `Fat ${pct(avgF)}%`, grams: Math.round(avgF), color: PIE_COLORS[2], legendFontColor: colors.text, legendFontSize: 13 },
     ];
   };
 
@@ -169,14 +194,49 @@ export default function ReportsScreen(): React.JSX.Element {
 
   const weightChartData = () => {
     if (weights.length === 0) return null;
-    const labels = weights.map(w => {
+    const allLabels = weights.map(w => {
       const d = new Date(w.loggedAt);
       return `${d.getMonth() + 1}/${d.getDate()}`;
     });
-    return {
-      labels,
-      datasets: [{ data: weights.map(w => Math.round(kgToLbs(w.weightKg) * 10) / 10) }],
-    };
+    const maxLabels = Math.max(2, Math.floor(chartWidth / 60));
+    const skip = Math.max(1, Math.ceil(allLabels.length / maxLabels));
+    const labels = allLabels.map((l, i) => {
+      if (allLabels.length <= maxLabels) return l;
+      if (i === allLabels.length - 1) return l;
+      if (i % skip === 0) {
+        const nextShown = i + skip;
+        if (nextShown > allLabels.length - 1 && allLabels.length - 1 - i < skip * 0.6) return '';
+        return l;
+      }
+      return '';
+    });
+    const weightData = weights.map(w => Math.round(kgToLbs(w.weightKg) * 10) / 10);
+    const n = weightData.length;
+    const datasets: any[] = [
+      { data: weightData, color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`, strokeWidth: 2 },
+    ];
+
+    const startLbs = weightData[0];
+    datasets.push({
+      data: Array(n).fill(startLbs),
+      color: () => '#5599DD',
+      strokeWidth: 1,
+      strokeDashArray: [6, 4],
+      withDots: false,
+    });
+
+    const goalLbs = goalProj?.goalLbs;
+    if (goalLbs && goalLbs !== startLbs) {
+      datasets.push({
+        data: Array(n).fill(goalLbs),
+        color: () => '#FF9800',
+        strokeWidth: 1,
+        strokeDashArray: [6, 4],
+        withDots: false,
+      });
+    }
+
+    return { labels, datasets, legend: undefined };
   };
 
   const weightStats = () => {
@@ -201,10 +261,38 @@ export default function ReportsScreen(): React.JSX.Element {
 
   // ── Render helpers ─────────────────────────────────────────────────
 
+  if (loadError && !goals && summaries.length === 0 && !overview && allWeights.length === 0) {
+    return (
+      <ErrorState
+        message={loadError}
+        onRetry={() => fetchAll(false)}
+      />
+    );
+  }
+
   if (loading) {
     return (
-      <View style={[s.center, { backgroundColor: colors.surfaceAlt }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+      <View style={[s.root, { backgroundColor: colors.surfaceAlt }]}>
+        <ScrollView style={s.scrollArea} contentContainerStyle={s.content}>
+          <View style={s.filterRow}>
+            {[1, 2, 3].map(i => (
+              <SkeletonCard key={i} height={36} style={{ width: 80 }} />
+            ))}
+          </View>
+          <SkeletonText lines={1} lastLineWidth="40%" style={{ marginBottom: 10 }} />
+          <View style={s.cardGrid}>
+            {[1, 2, 3, 4].map(i => (
+              <SkeletonCard key={i} height={90} style={{ width: '48%' }} />
+            ))}
+          </View>
+          <SkeletonText lines={1} lastLineWidth="30%" style={{ marginBottom: 10 }} />
+          <SkeletonCard height={220} style={{ marginBottom: 18 }} />
+          <SkeletonText lines={1} lastLineWidth="35%" style={{ marginBottom: 10 }} />
+          <SkeletonCard height={200} style={{ marginBottom: 18 }} />
+          <SkeletonText lines={1} lastLineWidth="40%" style={{ marginBottom: 10 }} />
+          <SkeletonCard height={220} style={{ marginBottom: 18 }} />
+          <View style={{ height: 16 }} />
+        </ScrollView>
       </View>
     );
   }
@@ -218,7 +306,18 @@ export default function ReportsScreen(): React.JSX.Element {
 
   return (
     <View style={[s.root, { backgroundColor: colors.surfaceAlt }]}>
-    <ScrollView style={s.scrollArea} contentContainerStyle={s.content}>
+    <ScrollView
+      style={s.scrollArea}
+      contentContainerStyle={s.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={forceFetch}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+        />
+      }
+    >
       {/* ── Period filter ──────────────────────────────────────────── */}
       <View style={s.filterRow}>
         {(['week', 'month', 'all'] as Period[]).map(p => (
@@ -257,7 +356,7 @@ export default function ReportsScreen(): React.JSX.Element {
         <StatCard
           colors={colors}
           icon="checkmark-circle-outline"
-          iconColor="#4CAF50"
+          iconColor="#7C3AED"
           label="Adherence"
           value={`${overview?.adherenceDays ?? 0}/${overview?.adherenceTotal ?? 0} days`}
         />
@@ -281,20 +380,21 @@ export default function ReportsScreen(): React.JSX.Element {
       <Text style={[s.sectionTitle, { color: colors.text }]}>Calories</Text>
       {calData && calData.datasets[0].data.length > 0 ? (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
-          <BarChart
-            data={calData}
+          <CustomBarChart
+            labels={calData.labels}
+            data={calData.datasets[0].data}
             width={chartWidth}
             height={220}
-            yAxisLabel=""
-            yAxisSuffix=""
-            chartConfig={chartConfig}
-            fromZero
-            showValuesOnTopOfBars
-            style={s.chart}
+            barColor={colors.accent}
+            labelColor={colors.textSecondary}
+            gridColor={colors.border}
+            goalValue={goals?.calories}
+            goalColor="#FF9800"
+            goalLabel={goals ? `Goal ${goals.calories}` : undefined}
           />
           {goals && (
             <Text style={[s.goalLine, { color: colors.textSecondary }]}>
-              Goal: {goals.calories} kcal  ·  Hit {calGoal.hit}/{calGoal.total} days (
+              Hit {calGoal.hit}/{calGoal.total} days (
               {calGoal.total > 0 ? Math.round((calGoal.hit / calGoal.total) * 100) : 0}%)
             </Text>
           )}
@@ -304,9 +404,12 @@ export default function ReportsScreen(): React.JSX.Element {
       )}
 
       {/* ── Section 3: Macro Breakdown ────────────────────────────── */}
-      <Text style={[s.sectionTitle, { color: colors.text }]}>Macro Breakdown</Text>
+      <Text style={[s.sectionTitle, { color: colors.text }]}>Average Daily Macros</Text>
       {pieData.length > 0 ? (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
+          <Text style={[s.chartSubtitle, { color: colors.textSecondary }]}>
+            Avg grams per day over {summaries.length} day{summaries.length !== 1 ? 's' : ''}
+          </Text>
           <PieChart
             data={pieData}
             width={chartWidth}
@@ -335,7 +438,7 @@ export default function ReportsScreen(): React.JSX.Element {
 
       {/* ── Section 4: Weight Progress ────────────────────────────── */}
       <Text style={[s.sectionTitle, { color: colors.text }]}>Weight Progress</Text>
-      {wData && wData.datasets[0].data.length > 1 ? (
+      {wData && wData.datasets[0].data.length > 0 ? (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
           <LineChart
             data={wData}
@@ -350,6 +453,22 @@ export default function ReportsScreen(): React.JSX.Element {
             bezier
             style={s.chart}
           />
+          <View style={s.weightLegendRow}>
+            <View style={s.legendItem}>
+              <View style={[s.legendDash, { backgroundColor: '#5599DD' }]} />
+              <Text style={[s.legendLabel, { color: colors.textSecondary }]}>
+                Start {wStats?.startLbs} lbs
+              </Text>
+            </View>
+            {goalProj?.goalLbs != null && goalProj.goalLbs !== wStats?.startLbs && (
+              <View style={s.legendItem}>
+                <View style={[s.legendDash, { backgroundColor: '#FF9800' }]} />
+                <Text style={[s.legendLabel, { color: colors.textSecondary }]}>
+                  Goal {goalProj.goalLbs} lbs
+                </Text>
+              </View>
+            )}
+          </View>
           {wStats && (
             <View style={s.weightStatsRow}>
               <WeightStatPill colors={colors} isDark={isDark} label="Start" value={`${wStats.startLbs} lbs`} />
@@ -360,7 +479,7 @@ export default function ReportsScreen(): React.JSX.Element {
           )}
         </View>
       ) : (
-        <EmptyCard colors={colors} message={weights.length === 1 ? 'Log at least 2 weights to see a chart.' : 'No weight data yet.'} />
+        <EmptyCard colors={colors} message="No weight data yet." />
       )}
 
       {/* ── Section 5: Goal Projection ──────────────────────────── */}
@@ -377,7 +496,7 @@ export default function ReportsScreen(): React.JSX.Element {
             }
             size={32}
             color={
-              goalProj.status === 'on_track' ? '#4CAF50' :
+              goalProj.status === 'on_track' ? '#7C3AED' :
               goalProj.status === 'behind' ? '#FF9800' : colors.textSecondary
             }
           />
@@ -390,7 +509,7 @@ export default function ReportsScreen(): React.JSX.Element {
               <Text style={[s.projHeadline, { color: colors.text }]}>
                 On track for {goalProj.goalLbs} lbs
               </Text>
-              <Text style={[s.projDate, { color: '#4CAF50' }]}>
+              <Text style={[s.projDate, { color: '#7C3AED' }]}>
                 ~{goalProj.estimatedDate}
               </Text>
               <Text style={[s.projDetail, { color: colors.textSecondary }]}>
@@ -407,7 +526,7 @@ export default function ReportsScreen(): React.JSX.Element {
               </Text>
             </>
           ) : (
-            <Text style={[s.projHeadline, { color: '#4CAF50' }]}>
+            <Text style={[s.projHeadline, { color: '#7C3AED' }]}>
               You've reached your goal weight!
             </Text>
           )}
@@ -429,7 +548,7 @@ export default function ReportsScreen(): React.JSX.Element {
             .map(p => {
               const adherence = p.calorieAdherenceRate;
               const barColor =
-                adherence >= 70 ? '#4CAF50' :
+                adherence >= 70 ? '#7C3AED' :
                 adherence >= 40 ? '#FF9800' : '#F44336';
               return (
                 <View key={p.day} style={s.patternRow}>
@@ -462,7 +581,7 @@ export default function ReportsScreen(): React.JSX.Element {
                 }
                 size={20}
                 color={
-                  c.type === 'positive' ? '#4CAF50' :
+                  c.type === 'positive' ? '#7C3AED' :
                   c.type === 'negative' ? '#F44336' : '#2196F3'
                 }
               />
@@ -565,7 +684,7 @@ const s = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#eee',
   },
-  filterPillActive: { backgroundColor: '#4CAF50' },
+  filterPillActive: { backgroundColor: '#7C3AED' },
   filterText: { fontSize: 14, color: '#555', fontWeight: '500' },
   filterTextActive: { color: '#fff' },
 
@@ -614,6 +733,7 @@ const s = StyleSheet.create({
   },
   chart: { borderRadius: 12 },
   goalLine: { fontSize: 13, color: '#555', marginTop: 8, textAlign: 'center' },
+  chartSubtitle: { fontSize: 12, marginBottom: 4, textAlign: 'center' },
 
   // Macro pills
   macroPillRow: {
@@ -630,6 +750,28 @@ const s = StyleSheet.create({
     paddingVertical: 5,
   },
   macroPillText: { fontSize: 12, fontWeight: '600' },
+
+  // Weight legend
+  weightLegendRow: {
+    flexDirection: 'row',
+    gap: 16,
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  legendDash: {
+    width: 16,
+    height: 2,
+    borderRadius: 1,
+  },
+  legendLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
 
   // Weight stats
   weightStatsRow: {

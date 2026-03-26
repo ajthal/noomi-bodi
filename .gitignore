@@ -37,8 +37,21 @@ local.properties
 
 # Environment (contains secrets)
 .env
+.env.production
 .env.local
 .env.*.local
+
+# Firebase config (contains API keys / project IDs)
+ios/GoogleService-Info.plist
+ios/firebase/
+android/app/google-services.json
+
+# Supabase CLI local state (contains project ref, pooler URL)
+supabase/.temp/
+
+# Test accounts with credentials
+src/utils/testAccounts.ts
+docs/seed_test_accounts.sql
 
 # node.js
 #

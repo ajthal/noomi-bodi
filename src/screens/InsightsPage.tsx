@@ -17,11 +17,16 @@ import {
   dismissInsight,
 } from '../services/insightGenerator';
 import { useTheme } from '../contexts/ThemeContext';
+import ThemedMarkdown from '../components/ThemedMarkdown';
+import { SkeletonCard } from '../components/SkeletonLoader';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 // ── Styling helpers ──────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<InsightType, { icon: string; color: string; bgLight: string; bgDark: string }> = {
-  success:        { icon: 'checkmark-circle', color: '#4CAF50', bgLight: '#E8F5E9', bgDark: '#1b3a1b' },
+  success:        { icon: 'checkmark-circle', color: '#7C3AED', bgLight: '#EDE9FE', bgDark: '#1a1033' },
   warning:        { icon: 'warning',          color: '#FF9800', bgLight: '#FFF3E0', bgDark: '#3a2e1b' },
   recommendation: { icon: 'bulb',             color: '#2196F3', bgLight: '#E3F2FD', bgDark: '#1b2d3a' },
   alert:          { icon: 'alert-circle',     color: '#F44336', bgLight: '#FFEBEE', bgDark: '#3a1b1b' },
@@ -35,34 +40,43 @@ export default function InsightsPage(): React.JSX.Element {
 
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setLoadError(null);
     try {
-      const result = await generateInsights(force);
+      const result = await generateInsights(isRefresh);
       setInsights(result.filter(i => !i.isDismissed));
     } catch (e) {
-      console.error('Error loading insights:', e);
+      setLoadError(getUserFriendlyError(e));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
+  const { fetchIfStale, forceFetch } = useStaleFetch(load, 60_000);
+
   useEffect(() => {
     if (!isFocused) return;
-    setLoading(true);
-    load().finally(() => setLoading(false));
-  }, [isFocused, load]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load(true);
-    setRefreshing(false);
-  }, [load]);
+    fetchIfStale();
+  }, [isFocused, fetchIfStale]);
 
   const handleDismiss = useCallback(async (id: string) => {
     setInsights(prev => prev.filter(i => i.id !== id));
     await dismissInsight(id);
   }, []);
+
+  const handleRetry = useCallback(() => {
+    forceFetch();
+  }, [forceFetch]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId(prev => (prev === id ? null : id));
@@ -72,10 +86,27 @@ export default function InsightsPage(): React.JSX.Element {
 
   if (loading) {
     return (
-      <View style={[s.center, { backgroundColor: colors.surfaceAlt }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={[s.loadingText, { color: colors.textSecondary }]}>Loading insights…</Text>
+      <View style={[s.root, { backgroundColor: colors.surfaceAlt }]}>
+        <ScrollView style={s.scrollArea} contentContainerStyle={s.content}>
+          <View style={s.headerRow}>
+            <View style={{ flex: 1 }} />
+            <SkeletonCard height={36} style={{ width: 100 }} />
+          </View>
+          <SkeletonCard height={14} style={{ marginBottom: 18, width: '80%' }} />
+          <SkeletonCard height={120} />
+          <SkeletonCard height={100} />
+          <SkeletonCard height={140} />
+        </ScrollView>
       </View>
+    );
+  }
+
+  if (loadError && insights.length === 0) {
+    return (
+      <ErrorState
+        message={loadError}
+        onRetry={handleRetry}
+      />
     );
   }
 
@@ -86,12 +117,12 @@ export default function InsightsPage(): React.JSX.Element {
         <View style={s.headerRow}>
           <Text style={[s.title, { color: colors.text }]}>AI Insights</Text>
           <TouchableOpacity
-            onPress={handleRefresh}
+            onPress={forceFetch}
             disabled={refreshing}
             style={[s.refreshBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
           >
             {refreshing ? (
-              <ActivityIndicator size="small" color="#4CAF50" />
+              <ActivityIndicator size="small" color="#7C3AED" />
             ) : (
               <Ionicons name="refresh-outline" size={18} color={colors.textSecondary} />
             )}
@@ -147,15 +178,18 @@ export default function InsightsPage(): React.JSX.Element {
                 </TouchableOpacity>
               </View>
 
-              <Text
-                style={[s.cardDesc, { color: colors.textSecondary }]}
-                numberOfLines={isExpanded ? undefined : 2}
-              >
-                {insight.description}
-              </Text>
-
-              {!isExpanded && (
-                <Text style={[s.expandHint, { color: cfg.color }]}>Tap for details</Text>
+              {isExpanded ? (
+                <ThemedMarkdown fontSize={14} lineHeight={20}>{insight.description}</ThemedMarkdown>
+              ) : (
+                <>
+                  <Text
+                    style={[s.cardDesc, { color: colors.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {insight.description}
+                  </Text>
+                  <Text style={[s.expandHint, { color: cfg.color }]}>Tap for details</Text>
+                </>
               )}
 
               {isExpanded && (
@@ -171,7 +205,7 @@ export default function InsightsPage(): React.JSX.Element {
 
         {refreshing && insights.length === 0 && (
           <View style={[s.generatingCard, { backgroundColor: colors.card }]}>
-            <ActivityIndicator size="small" color="#4CAF50" />
+            <ActivityIndicator size="small" color="#7C3AED" />
             <Text style={[s.generatingText, { color: colors.textSecondary }]}>
               Analyzing your data — this may take a few seconds…
             </Text>
@@ -190,7 +224,6 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   scrollArea: { flex: 1 },
   content: { padding: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   headerRow: {
     flexDirection: 'row',
@@ -251,6 +284,4 @@ const s = StyleSheet.create({
     marginTop: 10,
   },
   generatingText: { fontSize: 14, textAlign: 'center' },
-
-  loadingText: { fontSize: 14, marginTop: 10 },
 });

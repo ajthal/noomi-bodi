@@ -139,7 +139,7 @@ const s = StyleSheet.create({
   saveBtn: {
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
   },
   saveText: {

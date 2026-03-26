@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   RefreshControl,
   ScrollView,
@@ -9,10 +10,14 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+import { LineChart, PieChart } from 'react-native-chart-kit';
+import CustomBarChart from '../components/CustomBarChart';
 import { useTheme } from '../contexts/ThemeContext';
+import { useImpersonation } from '../contexts/ImpersonationContext';
+import ImpersonateModal from '../components/ImpersonateModal';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
 import {
   getUsageOverview,
   getUsageByDay,
@@ -77,7 +82,7 @@ const CHART_FILTER_DAYS = [
 ];
 
 const PIE_COLORS = [
-  '#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#E91E63',
+  '#7C3AED', '#2196F3', '#FF9800', '#9C27B0', '#E91E63',
   '#00BCD4', '#FF5722', '#3F51B5', '#8BC34A', '#FFC107',
   '#795548', '#009688', '#F44336', '#673AB7',
 ];
@@ -89,9 +94,11 @@ const ROLES = ['admin', 'beta', 'pro', 'standard', 'byok'];
 export default function AdminDashboard(): React.JSX.Element {
   const { colors, isDark } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
+  const { isImpersonating } = useImpersonation();
   const chartWidth = screenWidth - 40;
 
   const [loading, setLoading] = useState(true);
+  const [impersonateVisible, setImpersonateVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -134,8 +141,8 @@ export default function AdminDashboard(): React.JSX.Element {
       setActiveUsers(active);
       setRoleDistribution(roles);
       setRecentErrors(errors);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load data');
+    } catch (e) {
+      setError(getUserFriendlyError(e));
     }
   }, [chartDays]);
 
@@ -207,8 +214,8 @@ export default function AdminDashboard(): React.JSX.Element {
         u.userId === userId ? { ...u, role: newRole } : u
       ));
       setRolePickerUser(null);
-    } catch (e: any) {
-      console.error('Failed to update role:', e);
+    } catch (e) {
+      Alert.alert('Role update failed', getUserFriendlyError(e));
     }
   }, []);
 
@@ -216,41 +223,57 @@ export default function AdminDashboard(): React.JSX.Element {
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[s.container, { backgroundColor: colors.background }]}>
         <View style={[s.header, { borderBottomColor: colors.border }]}>
           <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
         </View>
         <View style={s.centerState}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[s.container, { backgroundColor: colors.background }]}>
         <View style={[s.header, { borderBottomColor: colors.border }]}>
           <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
         </View>
         <View style={s.centerState}>
-          <Ionicons name="alert-circle-outline" size={40} color={colors.error} />
-          <Text style={[s.errorText, { color: colors.textSecondary }]}>{error}</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
-            <Text style={s.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
+          <ErrorState message={error} onRetry={onRefresh} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={[s.container, { backgroundColor: colors.background }]}>
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <Text style={[s.headerTitle, { color: colors.text }]}>Admin</Text>
-        <TouchableOpacity style={s.refreshBtn} onPress={onRefresh}>
-          <Ionicons name="refresh" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {!isImpersonating && (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#EF4444',
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 16,
+                gap: 5,
+              }}
+              onPress={() => setImpersonateVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="swap-horizontal" size={15} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Impersonate</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={s.refreshBtn} onPress={onRefresh}>
+            <Ionicons name="refresh" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -267,8 +290,8 @@ export default function AdminDashboard(): React.JSX.Element {
                 label="Today"
                 value={fmtNum(overview.todayCalls)}
                 sub={`${fmtCost(overview.todayCost)} spent`}
-                color="#4CAF50"
-                bgColor={isDark ? '#1a2e1a' : '#E8F5E9'}
+                color="#7C3AED"
+                bgColor={isDark ? '#1a1033' : '#EDE9FE'}
               />
               <OverviewCard
                 label="This Week"
@@ -309,7 +332,7 @@ export default function AdminDashboard(): React.JSX.Element {
                 label="Avg Latency"
                 value={`${fmtNum(overview.avgLatencyMs)}ms`}
                 sub={`${overview.errorRate.toFixed(1)}% error rate`}
-                color={overview.errorRate > 5 ? '#d32f2f' : '#4CAF50'}
+                color={overview.errorRate > 5 ? '#d32f2f' : '#7C3AED'}
                 bgColor={isDark ? '#1e1e1e' : '#FAFAFA'}
               />
             </View>
@@ -325,8 +348,8 @@ export default function AdminDashboard(): React.JSX.Element {
                 label="Today"
                 value={fmtNum(activeUsers.daily)}
                 sub="active today"
-                color="#4CAF50"
-                bgColor={isDark ? '#1a2e1a' : '#E8F5E9'}
+                color="#7C3AED"
+                bgColor={isDark ? '#1a1033' : '#EDE9FE'}
               />
               <OverviewCard
                 label="This Week"
@@ -489,17 +512,14 @@ export default function AdminDashboard(): React.JSX.Element {
                 Tokens / Day (last 14d)
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <BarChart
-                  data={tokensBarData}
+                <CustomBarChart
+                  labels={tokensBarData.labels}
+                  data={tokensBarData.datasets[0].data}
                   width={Math.max(chartWidth, tokensBarData.labels.length * 50)}
                   height={180}
-                  chartConfig={chartConfig}
-                  withInnerLines={false}
-                  fromZero
-                  showBarTops={false}
-                  style={{ borderRadius: 12 }}
-                  yAxisLabel=""
-                  yAxisSuffix=""
+                  barColor={colors.accent}
+                  labelColor={colors.textSecondary}
+                  gridColor={colors.border}
                 />
               </ScrollView>
             </View>
@@ -631,7 +651,7 @@ export default function AdminDashboard(): React.JSX.Element {
                   <Text style={[s.activityEmail, { color: colors.text }]} numberOfLines={1}>
                     {log.userEmail}
                   </Text>
-                  <View style={[s.activityStatus, { backgroundColor: log.success ? '#4CAF50' : '#d32f2f' }]} />
+                  <View style={[s.activityStatus, { backgroundColor: log.success ? '#7C3AED' : '#d32f2f' }]} />
                 </View>
                 <View style={s.activityMeta}>
                   <Text style={[s.activityMetaItem, { color: colors.textSecondary }]}>
@@ -692,7 +712,7 @@ export default function AdminDashboard(): React.JSX.Element {
               </View>
             ))
           ) : (
-            <Text style={[s.emptyText, { color: '#4CAF50' }]}>No errors — looking good!</Text>
+            <Text style={[s.emptyText, { color: '#7C3AED' }]}>No errors — looking good!</Text>
           )}
         </View>
       </ScrollView>
@@ -736,7 +756,9 @@ export default function AdminDashboard(): React.JSX.Element {
           </View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+
+      <ImpersonateModal visible={impersonateVisible} onClose={() => setImpersonateVisible(false)} />
+    </View>
   );
 }
 

@@ -8,9 +8,8 @@ import {
   Image,
   Alert,
   StyleSheet,
-  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -27,17 +26,25 @@ import {
 import { logMeal } from '../services/mealLog';
 import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
+import { shareMealWithMultiple } from '../services/sharedMeals';
+import { sendNotification } from '../services/notifications';
+import FriendPickerModal from '../components/FriendPickerModal';
+import { SkeletonCard, SkeletonRow } from '../components/SkeletonLoader';
+import { EmptyState } from '../components/EmptyState';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 const SORT_OPTIONS = [
   { key: 'name', label: 'Name', color: '#607D8B' },
-  { key: 'calories', label: 'Calories', color: '#4CAF50' },
+  { key: 'calories', label: 'Calories', color: '#7C3AED' },
   { key: 'protein', label: 'Protein', color: '#2196F3' },
   { key: 'carbs', label: 'Carbs', color: '#FF9800' },
   { key: 'fat', label: 'Fat', color: '#9C27B0' },
 ];
 
 const FILTER_MACROS = [
-  { key: 'calories', label: 'Calories', color: '#4CAF50' },
+  { key: 'calories', label: 'Calories', color: '#7C3AED' },
   { key: 'protein', label: 'Protein (g)', color: '#2196F3' },
   { key: 'carbs', label: 'Carbs (g)', color: '#FF9800' },
   { key: 'fat', label: 'Fat (g)', color: '#9C27B0' },
@@ -60,6 +67,10 @@ export default function MealsScreen(): React.JSX.Element {
     carbs: { min: '', max: '' },
     fat: { min: '', max: '' },
   });
+  const [friendPickerVisible, setFriendPickerVisible] = useState(false);
+  const [sharingMealId, setSharingMealId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const isFocused = useIsFocused();
 
   const hasActiveFilters = useMemo(
@@ -128,15 +139,26 @@ export default function MealsScreen(): React.JSX.Element {
     });
   };
 
-  const refresh = useCallback(async () => {
-    const data = await getSavedMeals();
-    setMeals(data);
-    setInitialLoading(false);
+  const refresh = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    setLoadError(null);
+    try {
+      const data = await getSavedMeals();
+      setMeals(data);
+    } catch (e) {
+      console.error('MealsScreen refresh error:', e);
+      setLoadError(getUserFriendlyError(e));
+    } finally {
+      setInitialLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
+  const { fetchIfStale, forceFetch } = useStaleFetch(refresh, 30_000);
+
   useEffect(() => {
-    if (isFocused) refresh();
-  }, [isFocused, refresh]);
+    if (isFocused) fetchIfStale();
+  }, [isFocused, fetchIfStale]);
 
   // ── Handlers ──────────────────────────────────────────────────────
 
@@ -162,7 +184,7 @@ export default function MealsScreen(): React.JSX.Element {
       await refresh();
     } catch (e) {
       console.error('Failed to save meal:', e);
-      Alert.alert('Error', 'Failed to save the meal. Please try again.');
+      Alert.alert('Error', getUserFriendlyError(e));
     }
   };
 
@@ -176,8 +198,14 @@ export default function MealsScreen(): React.JSX.Element {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await deleteSavedMeal(meal.id);
-            await refresh();
+            const prevMeals = meals;
+            setMeals(prev => prev.filter(m => m.id !== meal.id));
+            try {
+              await deleteSavedMeal(meal.id);
+            } catch (e) {
+              setMeals(prevMeals);
+              Alert.alert('Error', getUserFriendlyError(e));
+            }
           },
         },
       ],
@@ -206,7 +234,7 @@ export default function MealsScreen(): React.JSX.Element {
               Alert.alert('Logged', `${meal.name} added to today's log.`);
             } catch (e) {
               console.error('Failed to quick-add meal:', e);
-              Alert.alert('Error', 'Failed to log the meal.');
+              Alert.alert('Error', getUserFriendlyError(e));
             }
           },
         },
@@ -229,16 +257,36 @@ export default function MealsScreen(): React.JSX.Element {
       Alert.alert('Saved', `"${data.name}" added to your meal library.`);
     } catch (e) {
       console.error('Failed to save AI-generated meal:', e);
-      Alert.alert('Error', 'Failed to save the meal. Please try again.');
+      Alert.alert('Error', getUserFriendlyError(e));
     }
   };
 
   const handleLongPress = (meal: SavedMeal) => {
     Alert.alert(meal.name, 'What would you like to do?', [
       { text: 'Cancel', style: 'cancel' },
+      { text: 'Share with Friend', onPress: () => {
+        setSharingMealId(meal.id);
+        setFriendPickerVisible(true);
+      }},
       { text: 'Edit', onPress: () => handleEdit(meal) },
       { text: 'Delete', style: 'destructive', onPress: () => handleDelete(meal) },
     ]);
+  };
+
+  const handleShareSend = async (selectedIds: string[], message: string) => {
+    if (!sharingMealId) return;
+    try {
+      await shareMealWithMultiple(sharingMealId, selectedIds, message);
+      setFriendPickerVisible(false);
+      setSharingMealId(null);
+      Alert.alert('Shared', `Meal shared with ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}.`);
+      for (const id of selectedIds) {
+        sendNotification('shared_meal', id, {}).catch(() => {});
+      }
+    } catch (error) {
+      console.error('Failed to share meal:', error);
+      Alert.alert('Error', getUserFriendlyError(error));
+    }
   };
 
   // ── Render ────────────────────────────────────────────────────────
@@ -274,7 +322,7 @@ export default function MealsScreen(): React.JSX.Element {
         </View>
 
         <View style={s.macroRow}>
-          <MacroPill label="Cal" value={item.calories} color="#4CAF50" labelColor={colors.textSecondary} />
+          <MacroPill label="Cal" value={item.calories} color="#7C3AED" labelColor={colors.textSecondary} />
           <MacroPill label="Protein" value={item.protein} unit="g" color="#2196F3" labelColor={colors.textSecondary} />
           <MacroPill label="Carbs" value={item.carbs} unit="g" color="#FF9800" labelColor={colors.textSecondary} />
           <MacroPill label="Fat" value={item.fat} unit="g" color="#9C27B0" labelColor={colors.textSecondary} />
@@ -297,13 +345,25 @@ export default function MealsScreen(): React.JSX.Element {
   if (initialLoading) {
     return (
       <View style={[s.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+        <View style={{ padding: 16 }}>
+          <SkeletonCard height={140} />
+          <SkeletonCard height={140} />
+          <SkeletonCard height={140} />
+        </View>
+      </View>
+    );
+  }
+
+  if (loadError && meals.length === 0) {
+    return (
+      <View style={[s.container, { backgroundColor: colors.background }]}>
+        <ErrorState message={loadError} onRetry={() => refresh(false)} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={[s.container, { backgroundColor: colors.background }]}>
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <Text style={[s.headerTitle, { color: colors.text }]}>Saved Meals</Text>
         <View style={s.headerActions}>
@@ -311,24 +371,19 @@ export default function MealsScreen(): React.JSX.Element {
             <Ionicons name="sparkles-outline" size={24} color="#FF9800" />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleCreate} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="add-circle-outline" size={28} color="#4CAF50" />
+            <Ionicons name="add-circle-outline" size={28} color="#7C3AED" />
           </TouchableOpacity>
         </View>
       </View>
 
       {meals.length === 0 ? (
-        <View style={s.emptyState}>
-          <Ionicons name="bookmark-outline" size={56} color={colors.textTertiary} />
-          <Text style={[s.emptyTitle, { color: colors.textTertiary }]}>No saved meals yet</Text>
-          <Text style={[s.emptySubtitle, { color: colors.textTertiary }]}>
-            Tap + to create one, or chat with NoomiBodi about meals you eat
-            regularly — it will suggest saving them here.
-          </Text>
-          <TouchableOpacity style={s.emptyCreateBtn} onPress={handleCreate}>
-            <Ionicons name="add" size={20} color="#fff" />
-            <Text style={s.emptyCreateText}>Create Meal</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          icon="bookmark-outline"
+          title="No saved meals yet"
+          subtitle="Tap + to create one, or chat with NoomiBodi about meals you eat regularly — it will suggest saving them here."
+          actionLabel="Create Meal"
+          onAction={handleCreate}
+        />
       ) : (
         <>
           {/* Search bar */}
@@ -470,6 +525,14 @@ export default function MealsScreen(): React.JSX.Element {
               contentContainerStyle={s.list}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={forceFetch}
+                  tintColor={colors.accent}
+                  colors={[colors.accent]}
+                />
+              }
             />
           )}
         </>
@@ -490,7 +553,13 @@ export default function MealsScreen(): React.JSX.Element {
         onGenerated={handleAIGenerated}
         onCancel={() => setAiBuilderVisible(false)}
       />
-    </SafeAreaView>
+
+      <FriendPickerModal
+        visible={friendPickerVisible}
+        onClose={() => { setFriendPickerVisible(false); setSharingMealId(null); }}
+        onSend={handleShareSend}
+      />
+    </View>
   );
 }
 
@@ -722,7 +791,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     marginTop: 12,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingVertical: 10,
     borderRadius: 10,
   },
@@ -763,7 +832,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 20,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,

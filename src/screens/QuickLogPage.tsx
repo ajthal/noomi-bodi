@@ -12,6 +12,8 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
+  RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import {
@@ -49,14 +51,21 @@ import {
   DailyMacroTotals,
 } from '../services/mealLog';
 import { saveMeal } from '../services/savedMeals';
-import { logWeight as logWeightApi } from '../services/reportData';
+import { logWeight as logWeightApi, getWeightLogs, WeightLog } from '../services/reportData';
 import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
-import { lbsToKg } from '../utils/units';
+import { lbsToKg, kgToLbs } from '../utils/units';
+import { LineChart } from 'react-native-chart-kit';
 import { useDayChange } from '../hooks/useDayChange';
 import { useDeepLink } from '../hooks/useDeepLink';
 import { useTheme } from '../contexts/ThemeContext';
 import SmartRecommendations from '../components/SmartRecommendations';
+import ThemedMarkdown from '../components/ThemedMarkdown';
+import { SkeletonCard, SkeletonText, SkeletonRow } from '../components/SkeletonLoader';
+import { EmptyState } from '../components/EmptyState';
+import { ErrorState } from '../components/ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
+import { useStaleFetch } from '../hooks/useStaleFetch';
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -78,13 +87,16 @@ interface PendingResult {
 }
 
 interface Props {
-  refreshTrigger: number;
-  onMealLogged: () => void;
+  refreshTrigger?: number;
+  onMealLogged?: () => void;
 }
 
 // ── Component ────────────────────────────────────────────────────────
 
-export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): React.JSX.Element {
+export default function QuickLogPage({
+  refreshTrigger = 0,
+  onMealLogged = () => {},
+}: Props): React.JSX.Element {
   const { colors, isDark } = useTheme();
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -100,33 +112,50 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
   const [descExpanded, setDescExpanded] = useState(false);
   const [weightInput, setWeightInput] = useState('');
   const [loggingWeight, setLoggingWeight] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [weekWeights, setWeekWeights] = useState<WeightLog[]>([]);
   const isFocused = useIsFocused();
+  const { width: screenWidth } = useWindowDimensions();
 
   // ── Data loading ──────────────────────────────────────────────────
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    setLoadError(null);
     try {
-      const [key, prof, meals, daily] = await Promise.all([
+      const [key, prof, meals, daily, ww] = await Promise.all([
         getApiKey(),
         loadUserProfile(),
         getTodaysMeals(),
         getDailyTotals(),
+        getWeightLogs(7),
       ]);
       setApiKey(key);
       setProfile(prof);
       if (prof) setGoals(estimateDailyGoals(prof));
       setTodaysMeals(meals);
       setTotals(daily);
+      setWeekWeights(ww);
     } catch (e) {
       console.error('QuickLogPage refresh error:', e);
+      setLoadError(getUserFriendlyError(e));
     } finally {
       setInitialLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
+  const { fetchIfStale, forceFetch, markStale } = useStaleFetch(refresh, 15_000);
+
   useEffect(() => {
-    if (isFocused) refresh();
-  }, [isFocused, refresh, refreshTrigger]);
+    if (isFocused) fetchIfStale();
+  }, [isFocused, fetchIfStale]);
+
+  // Cross-screen invalidation: when ChatScreen logs a meal, refreshTrigger increments
+  useEffect(() => {
+    if (refreshTrigger > 0) markStale();
+  }, [refreshTrigger, markStale]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -187,7 +216,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
       });
     } catch (e: any) {
       console.error('Image analysis error:', e);
-      Alert.alert('Error', e?.message || 'Failed to analyze the image.');
+      Alert.alert('Error', getUserFriendlyError(e));
     } finally {
       setAnalyzing(false);
     }
@@ -213,7 +242,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
   }, [apiKey, handleImageResult]);
 
   useDeepLink(useCallback((action) => {
-    if (action === 'quick-log' && apiKey) {
+    if ((action === 'quick-log' || action === 'add-photo') && apiKey) {
       launchCamera(IMAGE_PICKER_OPTIONS, handleImageResult);
     }
   }, [apiKey, handleImageResult]));
@@ -227,13 +256,13 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
       await logMeal(data, pendingResult.imageUri, pendingResult.imageBase64);
       setEditModalVisible(false);
       setPendingResult(null);
-      await refresh();
+      await refresh(false);
       onMealLogged();
       const userId = (await supabase.auth.getUser()).data.user?.id;
       if (userId) await syncWidgetData(userId);
     } catch (e) {
       console.error('Failed to log meal:', e);
-      Alert.alert('Error', 'Could not log the meal.');
+      Alert.alert('Error', getUserFriendlyError(e));
     }
   }, [pendingResult, refresh, onMealLogged]);
 
@@ -262,15 +291,22 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await deleteMeal(meal.id);
-          await refresh();
-          onMealLogged();
-          const userId = (await supabase.auth.getUser()).data.user?.id;
-          if (userId) await syncWidgetData(userId);
+          const prevMeals = todaysMeals;
+          setTodaysMeals(prev => prev.filter(m => m.id !== meal.id));
+          try {
+            await deleteMeal(meal.id);
+            await refresh(false);
+            onMealLogged();
+            const userId = (await supabase.auth.getUser()).data.user?.id;
+            if (userId) await syncWidgetData(userId);
+          } catch (e) {
+            setTodaysMeals(prevMeals);
+            Alert.alert('Error', getUserFriendlyError(e));
+          }
         },
       },
     ]);
-  }, [refresh, onMealLogged]);
+  }, [refresh, onMealLogged, todaysMeals]);
 
   // ── Weight logging ────────────────────────────────────────────────
 
@@ -284,6 +320,8 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
     try {
       await logWeightApi(lbsToKg(val));
       setWeightInput('');
+      const updatedWeights = await getWeightLogs(7);
+      setWeekWeights(updatedWeights);
       Alert.alert('Weight Logged', `${val} lbs recorded.`);
     } catch {
       Alert.alert('Error', 'Could not log weight.');
@@ -297,12 +335,27 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
   const now = new Date();
   const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // ── Loading ───────────────────────────────────────────────────────
+  // ── Loading / Error ──────────────────────────────────────────────
 
   if (initialLoading) {
     return (
       <View style={[s.root, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 60 }} />
+        <View style={s.scrollContent}>
+          <SkeletonText lines={2} style={{ marginBottom: 16 }} />
+          <SkeletonCard height={120} />
+          <SkeletonCard height={52} />
+          <SkeletonCard height={44} />
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
+      </View>
+    );
+  }
+
+  if (loadError && !profile) {
+    return (
+      <View style={[s.root, { backgroundColor: colors.background }]}>
+        <ErrorState message={loadError} onRetry={() => refresh(false)} />
       </View>
     );
   }
@@ -315,6 +368,14 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={forceFetch}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
       >
         {/* Header */}
         <Text style={[s.todayTitle, { color: colors.text }]}>Today</Text>
@@ -330,64 +391,82 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
           </View>
         )}
 
-        {/* Add Meal Button */}
-        <TouchableOpacity
-          style={[s.addButton, (analyzing || !apiKey) && s.addButtonDisabled]}
-          onPress={handleAddPhoto}
-          disabled={analyzing || !apiKey}
-          activeOpacity={0.7}
-        >
-          {analyzing ? (
-            <>
-              <ActivityIndicator size="small" color="#fff" />
-              <Text style={s.addButtonText}>Analyzing meal...</Text>
-            </>
-          ) : (
-            <>
-              <Ionicons name="camera-outline" size={22} color="#fff" />
-              <Text style={s.addButtonText}>Add Meal Photo</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
         {!apiKey && (
           <Text style={[s.hintText, { color: colors.error }]}>
-            Add your Claude API key in the Profile tab to get started.
+            Add your Claude API key in Profile settings to get started.
           </Text>
         )}
 
-        {/* Weight log (inline) */}
-        <View style={[s.weightRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          <Ionicons name="scale-outline" size={14} color={colors.textTertiary} />
-          <TextInput
-            style={[s.weightInput, { color: colors.text }]}
-            placeholder="Log weight (lbs)"
-            placeholderTextColor={colors.textTertiary}
-            keyboardType="decimal-pad"
-            value={weightInput}
-            onChangeText={setWeightInput}
-          />
-          <Pressable
-            style={[s.weightBtn, loggingWeight && { opacity: 0.5 }]}
-            onPress={handleLogWeight}
-            disabled={loggingWeight}
-          >
-            {loggingWeight ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={s.weightBtnText}>Log</Text>
-            )}
-          </Pressable>
-        </View>
+        {/* Weight section */}
+        <View style={s.weightSection}>
+          <View style={s.weightSectionHeader}>
+            <Ionicons name="scale-outline" size={18} color={colors.accent} />
+            <Text style={[s.weightSectionTitle, { color: colors.text }]}>Weight</Text>
+          </View>
 
-        {/* Smart Recommendations */}
-        {apiKey && goals && !pendingResult && (
-          <SmartRecommendations onMealLogged={() => { refresh(); onMealLogged(); }} />
-        )}
+          {weekWeights.length > 0 && (
+            <View style={[s.weightChartCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <LineChart
+                data={{
+                  labels: weekWeights.map(w => {
+                    const d = new Date(w.loggedAt);
+                    return `${d.getMonth() + 1}/${d.getDate()}`;
+                  }),
+                  datasets: [{ data: weekWeights.map(w => Math.round(kgToLbs(w.weightKg) * 10) / 10) }],
+                }}
+                width={screenWidth - 52}
+                height={180}
+                yAxisSuffix=""
+                yAxisLabel=""
+                formatYLabel={(v) => `${v} lbs`}
+                segments={3}
+                chartConfig={{
+                  backgroundGradientFrom: colors.surface,
+                  backgroundGradientTo: colors.surface,
+                  decimalPlaces: 1,
+                  color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`,
+                  labelColor: (opacity = 1) => isDark ? `rgba(200,200,200,${opacity})` : `rgba(0,0,0,${opacity})`,
+                  propsForBackgroundLines: { stroke: colors.border, strokeDasharray: '4 4' },
+                  propsForLabels: { fontSize: 10 },
+                }}
+                bezier
+                withInnerLines
+                withOuterLines={false}
+                style={{ borderRadius: 12, marginLeft: -8 }}
+              />
+              <Text style={[s.weekAvgText, { color: colors.textSecondary }]}>
+                Weekly avg: {(weekWeights.reduce((sum, w) => sum + kgToLbs(w.weightKg), 0) / weekWeights.length).toFixed(1)} lbs
+              </Text>
+            </View>
+          )}
+
+          <View style={[s.weightRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <Ionicons name="scale-outline" size={14} color={colors.textTertiary} />
+            <TextInput
+              style={[s.weightInput, { color: colors.text }]}
+              placeholder="Log weight (lbs)"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="decimal-pad"
+              value={weightInput}
+              onChangeText={setWeightInput}
+            />
+            <Pressable
+              style={[s.weightBtn, loggingWeight && { opacity: 0.5 }]}
+              onPress={handleLogWeight}
+              disabled={loggingWeight}
+            >
+              {loggingWeight ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={s.weightBtnText}>Log</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
 
         {/* Analysis Result Card */}
         {pendingResult && (
-          <View style={[s.resultCard, { backgroundColor: colors.surface, borderColor: isDark ? '#2e7d32' : '#c8e6c9' }]}>
+          <View style={[s.resultCard, { backgroundColor: colors.surface, borderColor: isDark ? '#5B21B6' : '#DDD6FE' }]}>
             <View style={s.resultHeader}>
               <Image source={{ uri: pendingResult.imageUri }} style={s.resultImage} />
               <View style={s.resultInfo}>
@@ -414,12 +493,9 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
                 activeOpacity={0.7}
                 onPress={() => setDescExpanded(prev => !prev)}
               >
-                <Text
-                  style={[s.resultDescription, { color: colors.textSecondary }]}
-                  numberOfLines={descExpanded ? undefined : 3}
-                >
-                  {pendingResult.description}
-                </Text>
+                <View style={descExpanded ? undefined : s.descCollapsed}>
+                  <ThemedMarkdown fontSize={14} lineHeight={20}>{pendingResult.description}</ThemedMarkdown>
+                </View>
                 <Text style={s.showMoreText}>
                   {descExpanded ? 'Show less' : 'Show more'}
                 </Text>
@@ -446,7 +522,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
 
             {mealLogged && (
               <View style={s.loggedBanner}>
-                <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={16} color="#7C3AED" />
                 <Text style={s.loggedBannerText}>Meal logged!</Text>
               </View>
             )}
@@ -468,10 +544,20 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
         )}
 
         {/* Today's Meals */}
-        {todaysMeals.length > 0 && (
-          <View style={s.mealsSection}>
-            <Text style={[s.mealsSectionTitle, { color: colors.text }]}>Today's Meals</Text>
-            {todaysMeals.map(meal => {
+        <View style={s.mealsSection}>
+          <Text style={[s.mealsSectionTitle, { color: colors.text }]}>Today's Meals</Text>
+          {apiKey && goals && !pendingResult && (
+            <SmartRecommendations onMealLogged={() => { refresh(); onMealLogged(); }} />
+          )}
+          {todaysMeals.length === 0 && !pendingResult && (
+            <EmptyState
+              icon="restaurant-outline"
+              title="No meals logged yet today"
+              subtitle="Take a photo of your meal to get started"
+              compact
+            />
+          )}
+          {todaysMeals.map(meal => {
               const imageSource = meal.imageUri?.startsWith('data:')
                 ? { uri: meal.imageUri }
                 : meal.imageUri
@@ -497,7 +583,7 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
                     <Text style={[s.mealName, { color: colors.text }]} numberOfLines={1}>{meal.name}</Text>
                   </View>
                   <View style={s.mealMacroRow}>
-                    <MacroPill label="Cal" value={meal.calories} color="#4CAF50" textSecondary={colors.textSecondary} />
+                    <MacroPill label="Cal" value={meal.calories} color="#7C3AED" textSecondary={colors.textSecondary} />
                     <MacroPill label="Protein" value={meal.protein} unit="g" color="#2196F3" textSecondary={colors.textSecondary} />
                     <MacroPill label="Carbs" value={meal.carbs} unit="g" color="#FF9800" textSecondary={colors.textSecondary} />
                     <MacroPill label="Fat" value={meal.fat} unit="g" color="#9C27B0" textSecondary={colors.textSecondary} />
@@ -505,9 +591,29 @@ export default function QuickLogPage({ refreshTrigger, onMealLogged }: Props): R
                 </TouchableOpacity>
               );
             })}
-          </View>
-        )}
+        </View>
       </ScrollView>
+
+      <View style={[s.stickyButtonWrap, { backgroundColor: colors.background }]}>
+        <TouchableOpacity
+          style={[s.addButton, (analyzing || !apiKey) && s.addButtonDisabled]}
+          onPress={handleAddPhoto}
+          disabled={analyzing || !apiKey}
+          activeOpacity={0.7}
+        >
+          {analyzing ? (
+            <>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={s.addButtonText}>Analyzing meal...</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="camera-outline" size={22} color="#fff" />
+              <Text style={s.addButtonText}>Add Meal Photo</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {pendingResult && (
         <EditMealModal
@@ -580,13 +686,18 @@ const s = StyleSheet.create({
     paddingBottom: 10,
   },
 
-  // Add button
+  // Sticky add button
+  stickyButtonWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     borderRadius: 14,
     paddingVertical: 16,
   },
@@ -604,11 +715,37 @@ const s = StyleSheet.create({
     marginTop: 8,
   },
 
-  // Weight log
+  // Weight section
+  weightSection: {
+    marginTop: 16,
+  },
+  weightSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  weightSectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  weightChartCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingTop: 10,
+    paddingBottom: 10,
+    paddingHorizontal: 6,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  weekAvgText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   weightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
@@ -665,9 +802,13 @@ const s = StyleSheet.create({
     marginTop: 10,
     lineHeight: 18,
   },
+  descCollapsed: {
+    maxHeight: 65,
+    overflow: 'hidden',
+  },
   showMoreText: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: '#7C3AED',
     fontWeight: '600',
     marginTop: 4,
   },
@@ -684,7 +825,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#7C3AED',
     borderRadius: 10,
     paddingVertical: 12,
   },
@@ -718,7 +859,7 @@ const s = StyleSheet.create({
   loggedBannerText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#7C3AED',
   },
   saveRow: {
     flexDirection: 'row',

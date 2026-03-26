@@ -140,7 +140,7 @@ export default function ProfileScreen(): React.JSX.Element {
   if (initialLoading) {
     return (
       <View style={[s.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+        <ActivityIndicator size="large" color="#7C3AED" />
       </View>
     );
   }
@@ -251,7 +251,7 @@ export default function ProfileScreen(): React.JSX.Element {
               <Ionicons
                 name={planExpanded ? 'chevron-up' : 'chevron-down'}
                 size={16}
-                color="#4CAF50"
+                color="#7C3AED"
               />
             </TouchableOpacity>
           </View>
@@ -290,8 +290,8 @@ function GoalsSummary({ goals }: { goals: MacroGoals }) {
   return (
     <View style={s.goalsContainer}>
       {/* Calorie ring-style highlight */}
-      <View style={[s.calorieCard, { backgroundColor: isDark ? '#1b3a1b' : '#E8F5E9' }]}>
-        <Text style={[s.calorieValue, { color: isDark ? '#66BB6A' : '#2E7D32' }]}>{goals.calories}</Text>
+      <View style={[s.calorieCard, { backgroundColor: isDark ? '#1a1033' : '#EDE9FE' }]}>
+        <Text style={[s.calorieValue, { color: isDark ? '#A78BFA' : '#5B21B6' }]}>{goals.calories}</Text>
         <Text style={[s.calorieUnit, { color: colors.accent }]}>cal / day</Text>
       </View>
 
@@ -420,7 +420,7 @@ const s = StyleSheet.create({
     gap: 10,
   },
   calorieCard: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#EDE9FE',
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
@@ -428,11 +428,11 @@ const s = StyleSheet.create({
   calorieValue: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#2E7D32',
+    color: '#5B21B6',
   },
   calorieUnit: {
     fontSize: 13,
-    color: '#4CAF50',
+    color: '#7C3AED',
     fontWeight: '500',
     marginTop: 2,
   },
@@ -490,7 +490,7 @@ const s = StyleSheet.create({
   readMoreText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#7C3AED',
   },
 
   planEmptyText: {

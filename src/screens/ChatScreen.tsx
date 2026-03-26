@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -9,12 +9,13 @@ import {
   Alert,
   TouchableOpacity,
   Image,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import Markdown from 'react-native-markdown-display';
 import ChatInputBox, { type PendingImage } from '../components/ChatInputBox';
+import ThemedMarkdown from '../components/ThemedMarkdown';
 import { styles } from './ChatScreen.styles';
 import EditMealModal from '../components/EditMealModal';
 import {
@@ -26,17 +27,21 @@ import {
   stripPlanMarkers,
   parseSaveMealSuggestion,
   stripSaveMealMarkers,
+  windowMessages,
+  summarizeDroppedMessages,
+  type ChatMessage,
 } from '../services/claude';
 import {
   saveMessages,
   loadMessages,
-  clearMessages,
   Message,
   MealData,
   getApiKey,
   loadUserProfile,
   saveUserProfile,
   UserProfile,
+  saveConversationSummary,
+  loadConversationSummary,
 } from '../services/storage';
 import { logMeal, getDailyTotals, getTodaysMeals } from '../services/mealLog';
 import { saveMeal } from '../services/savedMeals';
@@ -44,10 +49,53 @@ import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
 import { useDayChange } from '../hooks/useDayChange';
 import { useTheme } from '../contexts/ThemeContext';
+import { SkeletonText, SkeletonRow } from '../components/SkeletonLoader';
+import { getUserFriendlyError } from '../utils/errorMessages';
 
 // In-memory cache: imageUri → base64. Lives for the session so we can
 // attach the base64 data to meal entries when the user taps "Log Meal".
 const imageBase64Cache = new Map<string, string>();
+
+const noomiAvatar = require('../assets/noomi.png');
+
+function TypingIndicator({ color }: { color: string }) {
+  const dots = useRef([
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+  ]).current;
+
+  useEffect(() => {
+    const animations = dots.map((dot, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 200),
+          Animated.timing(dot, { toValue: 1, duration: 400, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+        ]),
+      ),
+    );
+    animations.forEach(a => a.start());
+    return () => animations.forEach(a => a.stop());
+  }, [dots]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 }}>
+      {dots.map((dot, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: color,
+            opacity: dot,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
 
 // ── Shared constants ──────────────────────────────────────────────────
 
@@ -59,7 +107,7 @@ const QUICK_ACTIONS = [
     id: 'meal-plan',
     label: 'Create meal plan',
     icon: 'calendar-outline' as const,
-    color: '#4CAF50',
+    color: '#7C3AED',
     prompt: 'Create a 7-day meal plan that hits my macro and calorie goals. Consider my saved meals and preferences.',
   },
   {
@@ -92,15 +140,17 @@ function useChatState() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [conversationSummary, setConversationSummary] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadMessages(), getApiKey(), loadUserProfile()]).then(
-      ([savedMessages, storedKey, storedProfile]) => {
+    Promise.all([loadMessages(), getApiKey(), loadUserProfile(), loadConversationSummary()]).then(
+      ([savedMessages, storedKey, storedProfile, storedSummary]) => {
         if (cancelled) return;
         setMessages(savedMessages);
         setApiKey(storedKey);
         setProfile(storedProfile);
+        setConversationSummary(storedSummary);
         setReady(true);
       },
     );
@@ -109,7 +159,7 @@ function useChatState() {
     };
   }, []);
 
-  return { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile };
+  return { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile, conversationSummary, setConversationSummary };
 }
 
 // ── Props ─────────────────────────────────────────────────────────────
@@ -126,43 +176,10 @@ export default function ChatScreen({
   onMealLogged,
 }: ChatScreenProps): React.JSX.Element {
   const { colors } = useTheme();
+  const navigation = useNavigation<any>();
+  const routeName = useRoute().name;
 
-  const mdStyles = useMemo(() => ({
-    body: { color: colors.text, fontSize: 15, lineHeight: 21 },
-    paragraph: { marginTop: 0, marginBottom: 6 },
-    strong: { fontWeight: '700' as const },
-    em: { fontStyle: 'italic' as const },
-    bullet_list: { marginVertical: 4 },
-    ordered_list: { marginVertical: 4 },
-    list_item: { marginVertical: 1 },
-    heading1: { fontSize: 20, fontWeight: '700' as const, color: colors.text, marginVertical: 6 },
-    heading2: { fontSize: 18, fontWeight: '700' as const, color: colors.text, marginVertical: 5 },
-    heading3: { fontSize: 16, fontWeight: '600' as const, color: colors.text, marginVertical: 4 },
-    code_inline: {
-      backgroundColor: colors.card,
-      color: colors.text,
-      fontSize: 13,
-      paddingHorizontal: 4,
-      borderRadius: 3,
-    },
-    fence: {
-      backgroundColor: colors.card,
-      color: colors.text,
-      fontSize: 13,
-      padding: 8,
-      borderRadius: 6,
-      marginVertical: 6,
-    },
-    blockquote: {
-      borderLeftWidth: 3,
-      borderLeftColor: colors.accent,
-      paddingLeft: 10,
-      marginVertical: 6,
-      opacity: 0.85,
-    },
-    hr: { backgroundColor: colors.borderLight, height: 1, marginVertical: 8 },
-    link: { color: colors.accent },
-  }), [colors]);
+
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -170,7 +187,7 @@ export default function ChatScreen({
     index: number;
     data: MealData;
   } | null>(null);
-  const { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile } =
+  const { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile, conversationSummary, setConversationSummary } =
     useChatState();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -280,29 +297,43 @@ export default function ChatScreen({
         getDailyTotals(),
       ]);
 
-      const apiMessages = newMessages.map((msg, i) => {
+      let systemPrompt = buildChatSystemPrompt(profile, { meals: todayMeals, totals: todayTotals });
+
+      const allApiMessages: ChatMessage[] = newMessages.map((msg, i) => {
         if (i === newMessages.length - 1 && image) {
           return {
-            role: msg.role,
+            role: msg.role as 'user' | 'assistant',
             content: msg.text,
             imageBase64: image.base64,
             imageMimeType: image.mimeType,
           };
         }
-        return { role: msg.role, content: msg.text };
+        return { role: msg.role as 'user' | 'assistant', content: msg.text };
       });
 
+      const systemTokens = Math.ceil(systemPrompt.length / 4);
+      const { kept, dropped } = windowMessages(allApiMessages, systemTokens);
+
+      if (dropped.length > 0 && apiKey) {
+        const newSummary = await summarizeDroppedMessages(dropped, conversationSummary, apiKey);
+        setConversationSummary(newSummary);
+        saveConversationSummary(newSummary);
+        systemPrompt += `\n\n**Summary of earlier conversation**\n${newSummary}`;
+      } else if (conversationSummary) {
+        systemPrompt += `\n\n**Summary of earlier conversation**\n${conversationSummary}`;
+      }
+
       const rawResponse = await sendMessageToClaude(
-        apiMessages,
+        kept,
         apiKey,
-        buildChatSystemPrompt(profile, { meals: todayMeals, totals: todayTotals }),
+        systemPrompt,
       );
       setMessages(await processResponse(rawResponse, newMessages));
     } catch (error) {
       console.error('Failed to send message:', error);
       setMessages([
         ...newMessages,
-        { text: 'Sorry, I encountered an error. Please try again.', role: 'assistant', timestamp: Date.now() },
+        { text: getUserFriendlyError(error), role: 'assistant', timestamp: Date.now() },
       ]);
     } finally {
       setIsLoading(false);
@@ -363,24 +394,8 @@ export default function ChatScreen({
       Alert.alert('Saved', `"${data.name}" has been added to your meal library.`);
     } catch (e) {
       console.error('Failed to save meal to library:', e);
-      Alert.alert('Error', 'Could not save the meal. Please try again.');
+      Alert.alert('Error', getUserFriendlyError(e));
     }
-  };
-
-  // ── Clear chat ─────────────────────────────────────────────────────
-
-  const handleClearChat = () => {
-    Alert.alert('Clear Chat', 'Are you sure you want to clear all messages?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear',
-        style: 'destructive',
-        onPress: async () => {
-          await clearMessages();
-          setMessages([]);
-        },
-      },
-    ]);
   };
 
   // ── Render helpers ─────────────────────────────────────────────────
@@ -401,7 +416,7 @@ export default function ChatScreen({
             </Text>
             {msg.mealLogged ? (
               <View style={styles.mealLoggedBadge}>
-                <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
                 <Text style={styles.mealLoggedText}>Logged</Text>
               </View>
             ) : (
@@ -414,7 +429,7 @@ export default function ChatScreen({
                   style={styles.editMealButton}
                   onPress={() => setEditingMeal({ index, data: msg.mealData! })}
                 >
-                  <Ionicons name="pencil-outline" size={16} color="#4CAF50" />
+                  <Ionicons name="pencil-outline" size={16} color={colors.accent} />
                   <Text style={styles.editMealButtonText}>Edit & Log</Text>
                 </TouchableOpacity>
               </View>
@@ -442,22 +457,44 @@ export default function ChatScreen({
 
   // ── JSX ────────────────────────────────────────────────────────────
 
+  const isStandaloneScreen = routeName === 'ChatScreen';
+
+  const screenHeader = isStandaloneScreen ? (
+    <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background }}>
+      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.borderLight }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
+        <View style={{ width: 26 }} />
+      </View>
+    </SafeAreaView>
+  ) : (
+    <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.borderLight }]}>
+      <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
+    </View>
+  );
+
   if (!ready) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+        {screenHeader}
+        <View style={{ padding: 20 }}>
+          <SkeletonText lines={2} style={{ marginBottom: 24 }} />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.borderLight }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
-        <TouchableOpacity onPress={handleClearChat}>
-          <Ionicons name="trash-outline" size={22} color="#ff3b30" />
-        </TouchableOpacity>
-      </View>
+      {screenHeader}
 
       <KeyboardAvoidingView
         style={styles.chatContainer}
@@ -472,8 +509,8 @@ export default function ChatScreen({
         >
           {messages.length === 0 && (
             <View style={styles.emptyState}>
-              <Ionicons name="chatbubble-ellipses-outline" size={48} color={colors.textTertiary} />
-              <Text style={[styles.emptyTitle, { color: colors.textTertiary }]}>Advanced Chat</Text>
+              <Image source={noomiAvatar} style={{ width: 80, height: 80, borderRadius: 40 }} />
+              <Text style={[styles.emptyTitle, { color: colors.textTertiary }]}>Chat with Noomi</Text>
               <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
                 Have a detailed conversation about your meals, nutrition goals, or snap a photo for analysis.
               </Text>
@@ -489,12 +526,19 @@ export default function ChatScreen({
                   : [styles.assistantMessage, { backgroundColor: colors.assistantBubble }],
               ]}
             >
-              <Text style={[styles.role, { color: colors.textSecondary }]}>{msg.role === 'user' ? 'You' : 'NoomiBodi'}</Text>
+              {msg.role === 'assistant' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Image source={noomiAvatar} style={{ width: 22, height: 22, borderRadius: 11 }} />
+                  <Text style={[styles.role, { color: colors.textSecondary, marginBottom: 0 }]}>Noomi</Text>
+                </View>
+              ) : (
+                <Text style={[styles.role, { color: colors.textSecondary }]}>You</Text>
+              )}
               {msg.imageUri && (
                 <Image source={{ uri: msg.imageUri }} style={styles.messageImage} resizeMode="cover" />
               )}
               {msg.role === 'assistant' ? (
-                <Markdown style={mdStyles}>{msg.text}</Markdown>
+                <ThemedMarkdown>{msg.text}</ThemedMarkdown>
               ) : (
                 <Text style={[styles.message, { color: colors.text }]}>{msg.text}</Text>
               )}
@@ -503,8 +547,11 @@ export default function ChatScreen({
           ))}
           {isLoading && (
             <View style={[styles.messageContainer, styles.assistantMessage, { backgroundColor: colors.assistantBubble }]}>
-              <ActivityIndicator size="small" color="#4CAF50" />
-              <Text style={[styles.thinkingText, { color: colors.textSecondary }]}>Thinking...</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Image source={noomiAvatar} style={{ width: 22, height: 22, borderRadius: 11 }} />
+                <Text style={[styles.role, { color: colors.textSecondary, marginBottom: 0 }]}>Noomi</Text>
+              </View>
+              <TypingIndicator color={colors.accent} />
             </View>
           )}
         </ScrollView>

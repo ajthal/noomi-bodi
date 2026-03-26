@@ -129,3 +129,10 @@ export async function deleteSavedMeal(id: string): Promise<void> {
   const { error } = await supabase.from('saved_meals').delete().eq('id', id);
   if (error) console.error('Error deleting saved meal:', error);
 }
+
+export async function clearAllSavedMeals(): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+  const { error } = await supabase.from('saved_meals').delete().eq('user_id', userId);
+  if (error) console.error('Error clearing saved meals:', error);
+}

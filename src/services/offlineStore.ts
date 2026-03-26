@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { isNetworkError } from '../utils/errorMessages';
 import { syncWidgetData } from './widgetDataSync';
 import type { MealData, UserProfile } from './storage';
 import type { MealEntry } from './mealLog';
@@ -45,20 +46,6 @@ function nextPendingId(): string {
 async function getUserId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
   return user?.id ?? null;
-}
-
-function isNetworkError(err: unknown): boolean {
-  if (!err) return false;
-  const msg = String((err as any)?.message ?? err).toLowerCase();
-  return (
-    msg.includes('network') ||
-    msg.includes('fetch') ||
-    msg.includes('timeout') ||
-    msg.includes('aborterror') ||
-    msg.includes('econnrefused') ||
-    msg.includes('enotfound') ||
-    msg.includes('failed to fetch')
-  );
 }
 
 // ── Write Queue ──────────────────────────────────────────────────────
@@ -182,10 +169,23 @@ export async function flushQueue(): Promise<{ synced: number; failed: number }> 
         });
         if (error) throw error;
       } else if (item.type === 'weight') {
+        const loggedAt = new Date(item.createdAt);
+        const dayStart = new Date(loggedAt);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+
+        await supabase
+          .from('weight_logs')
+          .delete()
+          .eq('user_id', userId)
+          .gte('logged_at', dayStart.toISOString())
+          .lt('logged_at', dayEnd.toISOString());
+
         const { error } = await supabase.from('weight_logs').insert({
           user_id: userId,
           weight_kg: item.payload.weightKg,
-          logged_at: new Date(item.createdAt).toISOString(),
+          logged_at: loggedAt.toISOString(),
         });
         if (error) throw error;
       }
@@ -257,4 +257,10 @@ export async function getCachedSavedMeals(): Promise<SavedMeal[] | null> {
   } catch {
     return null;
   }
+}
+
+export async function clearOfflineData(): Promise<void> {
+  await AsyncStorage.multiRemove([
+    QUEUE_KEY, CACHE_MEALS_KEY, CACHE_PROFILE_KEY, CACHE_SAVED_MEALS_KEY,
+  ]);
 }

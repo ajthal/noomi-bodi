@@ -10,33 +10,111 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 ## Architecture
 
 ### Screens (src/screens/)
-- **ChatTabScreen** — horizontal pager wrapping QuickLogPage (page 1) and ChatScreen (page 2)
-- **QuickLogPage** — daily calories/macros, add meal photo, weight log, smart suggestions, today's meals
-- **ChatScreen** — conversational interface with Claude, quick action chips, markdown rendering
-- **MealsScreen** — saved meals library with search, sort, macro filters, AI meal builder
-- **ReportsTabScreen** — horizontal pager wrapping ReportsScreen and InsightsPage
-- **ProfileScreen** — user profile, goals, API key, theme settings
-- **AdminDashboard** — admin-only tab with AI usage analytics (conditionally shown)
-- **OnboardingScreen** — multi-step onboarding (sign-up, API key, profile, Claude plan)
+- **QuickLogPage** — daily calories/macros, add meal photo, weight log, weekly weight chart, smart suggestions, today's meals. Registered directly as the "Home" page in the flat pager.
+- **ChatScreen** — conversational interface with Claude (Sonnet 4.6), quick action chips, markdown rendering, context window management with rolling conversation summary. Pushable RootStack screen accessed via TopBar chat bubble icon; includes themed back button when standalone.
+- **MealsScreen** — saved meals library with search, sort, macro filters, AI meal builder, share-with-friend via long-press. Registered as "MyMeals" page in the flat pager.
+- **SharedMealsPage** — "Share a Meal" button (meal picker → friend picker flow), received meals inbox with add-to-library, collapsible "Shared by You" section showing sent meals, unread indicators. Registered as "SharedMeals" page; reports unread count to MainTabs for SubTabBar badge.
+- **ReportsScreen** — calorie/weight charts with CustomBarChart, goal lines, interactive tooltips. Registered as "Reports" page.
+- **InsightsPage** — AI-generated insights. Registered as "Insights" page.
+- **SocialScreen** — activity feed, pending friend requests (collapsible), sent requests (collapsible), friends list (horizontal scroll), weekly leaderboard; "Add Friend" opens AddFriendModal
+- **AddFriendModal** — BottomSheet with user search, friendship status buttons (Follow/Pending/Accept/Friends)
+- **FriendProfileScreen** — RootStack screen showing friend's profile, stats card (streak, days tracked, adherence), plan summary, weight progress, average daily macros (all via `get_friend_stats` RPC); remove friend action; hidden if profile is private
+- **ProfilePage** — pushable RootStack screen (via TopBar profile picture). User profile picture, username, bio, stats, goals summary, "Edit Profile" button. Header has back arrow (left) and gear icon (right, navigates to SettingsScreen).
+- **SettingsPage** — pushable RootStack screen (via ProfilePage gear icon). Privacy toggle, API key, appearance, sign out, reset profile. Includes themed back button when standalone.
+- **EditProfileScreen** — RootStack screen for editing username, display name, bio, profile picture upload
+- **AdminDashboard** — admin-only page in the flat pager (conditionally shown)
+- **OnboardingScreen** — multi-step onboarding (API key, profile info, goals, activity, account, username, details, Claude plan); styles in separate `OnboardingScreen.styles.tsx` using `createStyles(colors, isDark)` pattern; step 1 shows full-width primary button + "Returning user? Sign in here" link (navigates to `SignInScreen` via `onSignIn` prop)
+- **SignInScreen** — standalone sign-in screen shown after sign-out (without profile reset); supports email/password, Apple, and Google sign-in; optional `onBack` prop shows a back arrow (only when navigated from onboarding's "Sign in here" link)
+- **EmailVerificationScreen** — blocks entry to main app until email is verified; polls session every 5s, has resend with 60s cooldown; skipped for social sign-ins (Google/Apple)
 
 ### Services (src/services/)
-- **claude.ts** — Anthropic Messages API integration, system prompts, response parsing, AI usage logging
+- **claude.ts** — Anthropic Messages API integration (model: `claude-sonnet-4-6`), system prompts, response parsing, AI usage logging, context window management (`windowMessages` trims oldest messages when approaching token budget, `summarizeDroppedMessages` generates a rolling conversation summary from trimmed messages)
 - **claudeTools.ts** — RAG tool definitions + execution for Claude function calling
-- **mealLog.ts** — daily_logs CRUD (Supabase + offline queue)
-- **savedMeals.ts** — saved_meals CRUD
-- **storage.ts** — AsyncStorage (API key, messages) + Supabase profiles/plans
-- **reportData.ts** — weight logs, daily summaries, overview stats
+- **mealLog.ts** — daily_logs CRUD (Supabase + offline queue); triggers streak milestone check after successful log
+- **savedMeals.ts** — saved_meals CRUD + `clearAllSavedMeals()` for profile reset
+- **storage.ts** — AsyncStorage (API key, messages, conversation summary) + Supabase profiles/plans; `UserProfile` includes social fields (username, displayName, profilePictureUrl, bio, isPrivate); `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights; `clearMessages()` also clears conversation summary
+- **profileService.ts** — username validation, availability check, user search via `public_profiles` table (ILIKE on username/display_name), admin search via `profiles` (includes email/role), profile picture upload to Supabase Storage, partial profile field updates, `suggestUsernameFromEmail()`
+- **friendships.ts** — friend request CRUD (send/accept/decline/remove); accept/decline restricted to recipient via `following_id` filter; queries for accepted friends, pending received/sent, friendship status check between two users
+- **activityFeed.ts** — streak milestone insertion, duplicate checking, friend activity feed query (RLS handles privacy); `checkAndRecordMilestone()` for auto-logging milestones
+- **leaderboard.ts** — weekly leaderboard calculation (adherence % = days hit calorie goal / 7); filters out private users; returns ranked list
+- **sharedMeals.ts** — share meals with friends, inbox query (two-step: shared_meals + saved_meals/public_profiles), sent shares query, unread count, mark as read (recipient-only), delete (recipient-only), copy to saved meals
+- **reportData.ts** — weight logs (upserts same-day entries), daily summaries, overview stats; `getFriendStats(friendId)` calls `get_friend_stats` RPC for friend profile data
 - **adminAnalytics.ts** — admin dashboard data queries
 - **analytics.ts** — weight prediction, adherence patterns, correlations
 - **insightGenerator.ts** — AI-generated insights via Claude
-- **offlineStore.ts** — offline queue + read cache
+- **offlineStore.ts** — offline queue + read cache + `clearOfflineData()` for profile reset
 - **supabase.ts** — Supabase client initialization
+- **notifications.ts** — FCM token registration/unregistration, `sendNotification()` (invokes Edge Function), `sendMilestoneNotifications()`, `claim_device_token` RPC call for stale token cleanup
+- **widgetBridge.ts** — native bridge to write widget data to App Group UserDefaults and reload WidgetKit timelines via `SharedGroupPreferences`
+- **widgetDataSync.ts** — aggregates today's calories/macros from `daily_logs` and goals from `user_plans`, then calls `updateWidgetData()` to push to the widget
+
+### iOS Widgets (ios/NoomiBodi Widget/)
+Native WidgetKit extension written in Swift. Shares data with the main app via App Group `group.noomibodi` using `UserDefaults(suiteName:)` with key `widgetData` (JSON string).
+
+**Widget types:**
+- **Home screen small** (`systemSmall`) — calorie ring + consumed/goal text
+- **Home screen medium** (`systemMedium`) — calorie ring + protein/carbs/fat rows + camera button (bottom-right, deep links to `noomibodi://add-photo` → launches camera for meal logging)
+- **Lock screen circular** (`accessoryCircular`) — calorie ring with remaining calories
+- **Lock screen rectangular** (`accessoryRectangular`) — calories + protein/carbs/fat gauges
+- **Control Center** — timer toggle (placeholder, not wired to nutrition data)
+- **Live Activity** — Dynamic Island placeholder (not yet integrated)
+
+**Data flow:** Meal logged → Supabase `daily_logs` → `syncWidgetData()` fetches today's totals + goals → `updateWidgetData()` writes JSON to App Group UserDefaults → `reloadWidgets()` triggers `WidgetCenter.shared.reloadAllTimelines()` → widget reads `widgetData` and refreshes.
+
+**Sync call sites:** QuickLogPage (after meal log, weight log, offline sync), ChatScreen (after send/AI response), MealsScreen (after save), SmartRecommendations (after suggested meal log), offlineStore (after offline sync).
+
+**Native bridge files:** `ios/SharedGroupPreferences.h` + `.m` (Obj-C React Native module exposing `set(suiteName, key, value)` and `reloadWidgets()`).
+
+### Push Notifications (Firebase + Supabase Edge Function)
+iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
+
+**Notification types:**
+- `friend_request` — when a user sends a friend request
+- `friend_accepted` — when a recipient accepts a friend request
+- `shared_meal` — when a friend shares a meal
+- `streak_milestone` — when a friend hits a streak milestone (sent to all non-private accepted friends)
+
+**Architecture:**
+- **Client:** `@react-native-firebase/messaging` (modular API) for token management and message listeners
+- **Server:** Supabase Edge Function `send-notification` (Deno) — validates caller JWT, looks up recipient FCM tokens from `device_tokens`, dispatches via FCM HTTP v1 API with Google service account JWT
+- **Native:** `AppDelegate.swift` configures Firebase, implements `UNUserNotificationCenterDelegate` for foreground banners, clears badge on `applicationDidBecomeActive`
+
+**Token lifecycle:** Register on app launch → upsert to `device_tokens` → refresh via `onTokenRefresh` listener → delete on sign-out → stale tokens cleaned via `claim_device_token()` RPC
+
+**Call sites for `sendNotification()`:** AddFriendModal (friend_request, friend_accepted), SocialScreen (friend_accepted), SharedMealsPage (shared_meal), MealsScreen (shared_meal), mealLog.ts (streak_milestone via `sendMilestoneNotifications`)
+
+**Edge Function secrets (Supabase Dashboard → Edge Functions → Secrets):** `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_JSON` (Firebase service account JSON), plus auto-injected `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`
+
+**Deployment:** `supabase functions deploy send-notification --no-verify-jwt` (gateway JWT verification disabled; function validates JWT internally)
+
+### Branding & Assets (src/assets/)
+- **Noomi** — the app's mascot, a purple phoenix. The primary Noomi image is `src/assets/noomi.png` (1024px, transparent background).
+- **App icons**: Noomi-based icons installed for iOS (`Images.xcassets/AppIcon.appiconset/`), iOS widget (`NoomiBodi Widget/Assets.xcassets/AppIcon.appiconset/`), and Android (`mipmap-*/ic_launcher.png` + `ic_launcher_round.png`).
+- **Launch screen**: `LaunchScreen.storyboard` shows Noomi mascot (120x120, `NoomiLogo` image set) centered above "NoomiBodi" label in purple. Image set at `Images.xcassets/NoomiLogo.imageset/`.
+- **Chat avatar**: Assistant messages in ChatScreen show a circular Noomi avatar (22x22) next to the "Noomi" label. The chat empty state uses a larger (80x80) Noomi image with "Chat with Noomi" title.
+- **Color palette** derived from Noomi: accent purple `#7C3AED`, lighter purple `#8B5CF6`, deep purple `#5B21B6`, light purple bg `#EDE9FE` / dark purple bg `#1a1033`. The old green accent (`#4CAF50`) has been fully replaced.
 
 ### Key Patterns
-- **Theming**: `useTheme()` hook from `ThemeContext` — apply colors via inline styles `{ color: colors.text }`, not in StyleSheet.create
-- **Auth**: `useAuth()` from `AuthContext` — wraps Supabase auth
-- **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop
-- **Reusable chat input**: `ChatInputBox` component with optional inline image attachment
+- **Theming**: `useTheme()` hook from `ThemeContext` — apply colors via inline styles `{ color: colors.text }`, not in StyleSheet.create. For screens with separate style files (OnboardingScreen), use `createStyles(colors, isDark)` function pattern with `useMemo`.
+- **Auth**: `useAuth()` from `AuthContext` — wraps Supabase auth; provides `signIn`, `signUp`, `signInWithApple`, `signInWithGoogle`, `signOut`, `resetPassword`, `resendVerificationEmail`, `refreshSession`
+- **Social Auth**: Apple Sign-In via `@invertase/react-native-apple-authentication` (library auto-hashes nonce with SHA256 before sending to Apple, so pass RAW nonce to both the library and Supabase); Google Sign-In via `@react-native-google-signin/google-signin` (patched native iOS code via `patch-package` to support nonce parameter; Google does NOT auto-hash, so pass SHA256 hashed nonce to Google + raw nonce to Supabase `signInWithIdToken`)
+- **Identity Linking**: Supabase automatic linking is enabled by default — same email across Google, Apple, and email/password maps to one account
+- **Email Verification**: After email/password sign-up, user completes onboarding but is blocked from the main app by `EmailVerificationScreen` until `email_confirmed_at` is set; social sign-ins skip this
+- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`; onboarding step 1 "Sign in here" sets `signInFromOnboarding` flag → `SignInScreen` gets `onBack` to return to onboarding; `RootStack` includes `EditProfileScreen`, `FriendProfileScreen`, `ProfileScreen`, `SettingsScreen`, and `ChatScreen` as pushable screens on top of `MainTabs`
+- **Flat Pager Navigation**: `MainTabs` uses `createMaterialTopTabNavigator` as a flat swipeable pager with all screens registered individually: Home, MyMeals, SharedMeals, Reports, Insights, Social (, Admin). A persistent `TopBar` (profile picture left → ProfileScreen, chat bubble right → ChatScreen) sits above the pager. A `SubTabBar` (icon-based segmented control) appears for multi-page tab groups (Meals, Reports). A `CustomBottomTabBar` groups pages into tab groups (Home, Meals, Reports, Social, Admin) and highlights the active group. Navigation between tabs via swipe or bottom tab press; sub-page switching via SubTabBar or swipe.
+- **Deep Links**: `useDeepLink` hook in QuickLogPage handles `noomibodi://quick-log` and `noomibodi://add-photo` (both launch camera). Widget uses `add-photo` for camera button, `quick-log` as default tap URL.
+- **Social Features**: Bidirectional friendships (both must accept), privacy toggle (hides activity/leaderboard), streak milestones auto-logged on meal log, weekly leaderboard (Mon-Sun adherence %), meal sharing between accepted friends
+- **Impersonation**: `ImpersonationContext` — admin-only session switching for testing other accounts; `ImpersonationBanner` red border when active; `ImpersonateModal` for admin dashboard search
+- **Modals**: use `BottomSheet` component for consistent drag-to-dismiss, dark backdrop (AddFriendModal, FriendPickerModal, MealPickerModal, ImpersonateModal use this pattern)
+- **Reusable components**: `ChatInputBox` (chat input with image attachment), `ThemedMarkdown` (themed markdown renderer used in chat, AI meal builder, quick log descriptions), `MealPickerModal` (select a meal from library for sharing), `FriendPickerModal` (select friends for sharing), `TopBar` (persistent top bar with profile picture + chat bubble), `SubTabBar` (icon-based segmented control for sub-pages), `CustomBottomTabBar` (grouped tab bar for flat pager), `CustomBarChart` (interactive bar chart with tooltips, goal lines, label thinning)
+- **Loading & Error Components**: `LoadingScreen` (full-screen spinner), `SkeletonLoader` (animated placeholder shapes: `SkeletonText`, `SkeletonCircle`, `SkeletonCard`, `SkeletonRow`), `ErrorState` (error message + retry button, supports `compact` mode), `EmptyState` (icon + title + subtitle + optional CTA, supports `compact` mode), `LoadingButton` (async-aware button with auto-spinner and error Alert), `OfflineBanner` (animated slide-in/out with "Back online" message), `ErrorBoundary` (app-level crash recovery)
+- **Error Handling**: `getUserFriendlyError(err)` in `src/utils/errorMessages.ts` maps technical errors (Supabase, HTTP, Claude, auth, network) to user-facing messages. `isNetworkError(err)` is also exported from there (single source of truth). All screens use these for Alert and ErrorState messages.
+- **Retry Logic**: `withRetry(fn, options?)` in `src/utils/retry.ts` — exponential backoff for transient failures (429, 5xx, rate limit). Applied to `claude.ts` and `notifications.ts`.
+- **Data Fetching**: `useAsyncData(fetcher, options?)` hook standardizes loading/error/refresh pattern. Screens distinguish `loading` (first load, shows skeleton) from `refreshing` (subsequent load, shows RefreshControl spinner).
+- **Stale-Time Guard**: `useStaleFetch(fetchFn, staleTimeMs)` hook prevents redundant re-fetching on tab switches. Returns `fetchIfStale` (skip if fresh), `forceFetch` (pull-to-refresh), `markStale` (invalidate after mutations). Applied to all data-loading screens with per-screen stale times (15s–60s).
+- **Optimistic Updates**: UI updates immediately for reversible operations (friend accept/decline, meal delete, shared meal delete) with rollback on failure.
+- **Profanity filter**: `src/utils/profanityFilter.ts` — client-side check for usernames/display names/bios; skipped for admin accounts
+- **Push Notifications**: `useNotifications` hook in `App.tsx` — registers FCM token, listens for foreground/background messages, navigates on tap; `notifications.ts` service handles token CRUD and Edge Function invocation
 - **Offline**: writes queued locally via `offlineStore.ts`, synced on reconnect via `useOfflineSync` hook
 - **Day change**: `useDayChange` hook triggers refresh at midnight
 
@@ -44,18 +122,72 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 
 - TypeScript strict, functional components only
 - Styles via `StyleSheet.create` at bottom of file; theme colors applied inline in JSX
+- For screens with separate style files, use `createStyles(colors: ThemeColors, isDark: boolean)` function that returns `StyleSheet.create({...})`, consumed via `useMemo` in the component
 - `colors.surface` for card backgrounds, `colors.border` for card borders, `borderRadius: 14` for cards
 - 12px spacing between sibling components on QuickLogPage
 - All modals use `BottomSheet` wrapper (tap/drag dismiss, dark backdrop)
+- Every screen with async data uses skeleton loaders (not ActivityIndicator) for initial load, `RefreshControl` for pull-to-refresh, `ErrorState` for fetch failures, and `EmptyState` for zero-data scenarios
+- All error messages shown to users go through `getUserFriendlyError()` — never show raw error messages
+- Tab-switching uses `useStaleFetch` to avoid redundant re-fetches; data stays visible while background refresh runs
 - Claude responses parsed with markers: `[MEAL_DATA]`, `[PLAN_START]`, `[SAVE_MEAL]`, `[PORTION]`
+- **Context window management**: `windowMessages()` estimates token count (~4 chars/token, images ~1600 tokens) and trims oldest messages when approaching 150K token budget. Dropped messages are summarized via `summarizeDroppedMessages()` into a rolling recap injected into the system prompt. Summary persists in AsyncStorage (`@noomibodi_conversation_summary`). Full message history stays in the UI; only the API call is windowed.
 - AI usage logged to `ai_usage_logs` table after every Claude API call
+- Onboarding and auth screens always follow system theme (ThemeProvider defaults to `mode: 'system'`)
+- Primary buttons invert in dark mode: white bg with dark text (light mode: dark bg with white text)
+- Apple Sign-In button inverts in dark mode (white bg/dark text); Google button stays blue in both themes
+- Accent color is purple `#7C3AED` (Noomi's palette) — use `colors.accent` from theme; never use green `#4CAF50`
+- New accent-colored UI backgrounds use `#EDE9FE` (light) / `#1a1033` (dark); accent text uses `#5B21B6` (light) / `#A78BFA` (dark)
+- Noomi avatar (`require('../assets/noomi.png')`) should appear wherever the AI persona is represented (chat messages, empty states)
+- iOS widget accent color matches the app (`0x7C3AED` in `NoomiBodi_Widget.swift`)
 
 ## Database (Supabase + RLS)
-Tables: `profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`
+Tables: `profiles`, `public_profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`, `device_tokens`, `meal_plans`
 Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
+
+**Social columns on `profiles`:** `username` (UNIQUE), `display_name`, `profile_picture_url`, `bio`, `is_private` (default false)
+
+**Synced Tables:**
+- `public_profiles` — separate table (not a view) containing only non-sensitive profile columns (`id`, `username`, `display_name`, `profile_picture_url`, `bio`, `is_private`, `created_at`). Kept in sync with `profiles` via the `sync_public_profile()` SECURITY DEFINER trigger (fires AFTER INSERT/UPDATE/DELETE on `profiles`). All social cross-user lookups query this table. Excludes `email`, `gender`, `age`, `height_cm`, `current_weight_kg`, `activity_level`, `role`. RLS: `authenticated` can SELECT all rows.
+
+**Social tables:**
+- `friendships` — bidirectional friend system (follower_id, following_id, status: pending/accepted/declined). Both users can view/delete; only follower can create; only recipient (`following_id`) can accept/decline (UPDATE).
+- `activity_feed` — user achievements (streak milestones). RLS enforces privacy: friends' activity visible only if friendship accepted AND `is_private = false`.
+- `shared_meals` — share saved meals between friends (meal_id FK → saved_meals). Sender must own the meal; recipient can mark read/delete. `saved_meals` has an RLS policy allowing recipients to view shared meals.
+
+**Push notification tables:**
+- `device_tokens` — FCM token storage (user_id, fcm_token, platform). RLS: users manage own tokens. UNIQUE(user_id, fcm_token). ON DELETE CASCADE from auth.users.
+
+**Helper functions:**
+- `is_admin()` — SECURITY DEFINER SQL function checking `profiles.role = 'admin'`, used in admin RLS policies to avoid recursion.
+- `sync_public_profile()` — SECURITY DEFINER trigger function that fires AFTER INSERT/UPDATE/DELETE on `profiles`. Upserts public-facing columns into `public_profiles` on insert/update, deletes on delete.
+- `claim_device_token(p_fcm_token)` — SECURITY DEFINER function that deletes stale `device_tokens` entries for the same FCM token belonging to a different user. Called during token registration to handle device reuse across accounts.
+- `get_friend_stats(p_friend_id)` — SECURITY DEFINER function returning JSONB with friend's stats (streak, adherence), plan, weight progress, and avg macros. Checks accepted friendship and non-private profile. Called by `FriendProfileScreen` via `reportData.getFriendStats()`.
+
+**Storage bucket:** `profile-pictures` (public). Folder structure: `{user_id}/{timestamp}.jpg`. URLs stored in `profiles.profile_picture_url`.
+
 See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
+
+## Environment Management
+- **Dev/Prod split**: Separate Supabase projects and Firebase projects for development and production.
+- **`.env`** (dev) and **`.env.production`** (prod) — loaded via `react-native-dotenv` with `envName: 'APP_ENV'` in `babel.config.js`.
+- **Switching**: `APP_ENV=production react-native start --reset-cache` or use `npm run start:prod` / `npm run ios:prod`.
+- **Firebase plist**: Dev and prod `GoogleService-Info.plist` files stored in `ios/firebase/` (gitignored). Copy the correct one to `ios/GoogleService-Info.plist` before building. See `docs/deployment-guide.md` for switching commands.
+- **Schema migrations**: Managed via Supabase CLI. Migration files in `supabase/migrations/`. Apply with `supabase link --project-ref <ref> && supabase db push`.
+- **Bundle ID**: `com.athalhei.noomibodi` (main app), `com.athalhei.noomibodi.widget` (widget extension).
 
 ## Dependencies
 - react-native-image-picker, react-native-chart-kit, react-native-svg
-- react-native-markdown-display (chat), @react-native-community/netinfo (offline)
+- react-native-markdown-display (chat + onboarding plan), @react-native-community/netinfo (offline)
 - @supabase/supabase-js, axios, react-native-vector-icons/Ionicons
+- @react-navigation/material-top-tabs, react-native-pager-view (swipeable flat pager for tab navigation)
+- @invertase/react-native-apple-authentication (Apple Sign-In)
+- @react-native-google-signin/google-signin (Google Sign-In, patched via patch-package for iOS nonce support)
+- @react-native-firebase/app, @react-native-firebase/messaging (push notifications via FCM; use modular API)
+- js-sha256 (nonce hashing for Google Sign-In)
+- patch-package (postinstall script applies native iOS patches)
+
+## Sensitive Files (gitignored)
+- `.env`, `.env.local`, `.env.*.local` — environment secrets
+- `ios/GoogleService-Info.plist` — Firebase config (API keys, project IDs)
+- `supabase/.temp/` — Supabase CLI local state (project ref, pooler URL)
+- `src/utils/testAccounts.ts`, `docs/seed_test_accounts.sql` — test credentials

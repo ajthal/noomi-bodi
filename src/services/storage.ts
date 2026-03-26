@@ -5,6 +5,7 @@ import { cacheProfile, getCachedProfile } from './offlineStore';
 // ── AsyncStorage keys (local-only data) ──────────────────────────────
 
 const MESSAGES_KEY = '@noomibodi_messages';
+const CONVERSATION_SUMMARY_KEY = '@noomibodi_conversation_summary';
 const API_KEY_KEY = '@noomibodi_api_key';
 const LEGACY_API_KEY = 'claude_api_key';
 
@@ -56,6 +57,11 @@ export interface UserProfile {
   activityLevel: ActivityLevel;
   plan?: string | null;
   dailyGoals?: MacroGoals | null;
+  username?: string | null;
+  displayName?: string | null;
+  profilePictureUrl?: string | null;
+  bio?: string | null;
+  isPrivate?: boolean;
 }
 
 // ── Goal estimation (Mifflin-St Jeor) ─────────────────────────────────
@@ -127,8 +133,36 @@ export async function loadMessages(): Promise<Message[]> {
 export async function clearMessages(): Promise<void> {
   try {
     await AsyncStorage.removeItem(MESSAGES_KEY);
+    await AsyncStorage.removeItem(CONVERSATION_SUMMARY_KEY);
   } catch (error) {
     console.error('Error clearing messages:', error);
+  }
+}
+
+// ── Conversation summary (AsyncStorage — rolling recap of trimmed messages) ──
+
+export async function saveConversationSummary(summary: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CONVERSATION_SUMMARY_KEY, summary);
+  } catch (error) {
+    console.error('Error saving conversation summary:', error);
+  }
+}
+
+export async function loadConversationSummary(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(CONVERSATION_SUMMARY_KEY);
+  } catch (error) {
+    console.error('Error loading conversation summary:', error);
+    return null;
+  }
+}
+
+export async function clearConversationSummary(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(CONVERSATION_SUMMARY_KEY);
+  } catch (error) {
+    console.error('Error clearing conversation summary:', error);
   }
 }
 
@@ -173,7 +207,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { error: profileError } = await supabase.from('profiles').upsert({
+  const upsertData: Record<string, unknown> = {
     id: userId,
     email: user?.email,
     gender: profile.gender,
@@ -182,7 +216,14 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
     current_weight_kg: profile.weightKg,
     activity_level: profile.activityLevel,
     updated_at: new Date().toISOString(),
-  });
+  };
+  if (profile.username !== undefined) upsertData.username = profile.username;
+  if (profile.displayName !== undefined) upsertData.display_name = profile.displayName;
+  if (profile.profilePictureUrl !== undefined) upsertData.profile_picture_url = profile.profilePictureUrl;
+  if (profile.bio !== undefined) upsertData.bio = profile.bio;
+  if (profile.isPrivate !== undefined) upsertData.is_private = profile.isPrivate;
+
+  const { error: profileError } = await supabase.from('profiles').upsert(upsertData);
 
   if (profileError) {
     console.error('Error saving profile:', profileError);
@@ -259,6 +300,11 @@ export async function loadUserProfile(): Promise<UserProfile | null> {
             fat: Number(planData.daily_fat_g),
           }
         : null,
+      username: profileData.username || null,
+      displayName: profileData.display_name || null,
+      profilePictureUrl: profileData.profile_picture_url || null,
+      bio: profileData.bio || null,
+      isPrivate: profileData.is_private ?? false,
     };
 
     await cacheProfile(profile);
@@ -276,6 +322,8 @@ export async function clearUserProfile(): Promise<void> {
   try {
     await supabase.from('user_plans').delete().eq('user_id', userId);
     await supabase.from('daily_logs').delete().eq('user_id', userId);
+    await supabase.from('weight_logs').delete().eq('user_id', userId);
+    await supabase.from('user_insights').delete().eq('user_id', userId);
     await supabase.from('profiles').delete().eq('id', userId);
   } catch (error) {
     console.error('Error clearing user profile:', error);

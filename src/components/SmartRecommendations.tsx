@@ -16,6 +16,8 @@ import {
 } from '../services/claude';
 import { MealData, getApiKey, loadUserProfile, estimateDailyGoals } from '../services/storage';
 import { getTodaysMeals, getDailyTotals, logMeal } from '../services/mealLog';
+import { ErrorState } from './ErrorState';
+import { getUserFriendlyError } from '../utils/errorMessages';
 import { syncWidgetData } from '../services/widgetDataSync';
 import { supabase } from '../services/supabase';
 
@@ -40,6 +42,7 @@ const RECS_PROMPT =
 export default function SmartRecommendations({ onMealLogged }: Props) {
   const { colors, isDark } = useTheme();
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [remaining, setRemaining] = useState<{ calories: number; protein: number; carbs: number; fat: number } | null>(null);
   const [visible, setVisible] = useState(false);
@@ -47,6 +50,7 @@ export default function SmartRecommendations({ onMealLogged }: Props) {
 
   const fetchRecommendations = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [apiKey, profile, meals, totals] = await Promise.all([
         getApiKey(),
@@ -100,6 +104,7 @@ export default function SmartRecommendations({ onMealLogged }: Props) {
       setRecs(parsed.slice(0, 3));
     } catch (err) {
       console.error('SmartRecommendations error:', err);
+      setLoadError(getUserFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -169,6 +174,8 @@ export default function SmartRecommendations({ onMealLogged }: Props) {
           <ActivityIndicator size="small" color={colors.accent} />
           <Text style={[s.loadingText, { color: colors.textSecondary }]}>Getting suggestions...</Text>
         </View>
+      ) : loadError && recs.length === 0 ? (
+        <ErrorState message={loadError} onRetry={fetchRecommendations} compact />
       ) : recs.length === 0 ? (
         <Text style={[s.emptyText, { color: colors.textTertiary }]}>
           {remaining && remaining.calories < 100
@@ -194,11 +201,11 @@ export default function SmartRecommendations({ onMealLogged }: Props) {
             </View>
             {rec.logged ? (
               <View style={s.loggedBadge}>
-                <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={20} color="#7C3AED" />
               </View>
             ) : rec.mealData ? (
               <TouchableOpacity style={s.quickAddBtn} onPress={() => handleLog(i)}>
-                <Ionicons name="add-circle" size={24} color="#4CAF50" />
+                <Ionicons name="add-circle" size={24} color="#7C3AED" />
               </TouchableOpacity>
             ) : null}
           </View>

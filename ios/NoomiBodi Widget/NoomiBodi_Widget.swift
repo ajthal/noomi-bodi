@@ -36,12 +36,13 @@ private let textSecondary = Color(hex: 0x999999)
 private let textTertiary = Color(hex: 0x666666)
 private let borderColor = Color(hex: 0x333333)
 
-private let calorieGreen = Color(hex: 0x4CAF50)
+private let accentPurple = Color(hex: 0x7C3AED)
 private let proteinBlue = Color(hex: 0x2196F3)
 private let carbsOrange = Color(hex: 0xFF9800)
 private let fatPurple = Color(hex: 0x9C27B0)
 
 private let quickLogURL = URL(string: "noomibodi://quick-log")!
+private let addPhotoURL = URL(string: "noomibodi://add-photo")!
 
 extension Color {
     init(hex: UInt, alpha: Double = 1.0) {
@@ -166,7 +167,7 @@ struct CalorieRingView: View {
                 .stroke(borderColor, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: progress)
-                .stroke(calorieGreen, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .stroke(accentPurple, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
                 Text("\(remaining)")
@@ -297,32 +298,40 @@ struct NoomiBodi_WidgetEntryView: View {
     // MARK: Home Screen — Medium
 
     private func mediumView(data: WidgetData) -> some View {
-        HStack(spacing: 16) {
-            Link(destination: quickLogURL) {
+        VStack(spacing: 8) {
+            HStack(spacing: 16) {
                 VStack(spacing: 5) {
-                    ZStack(alignment: .bottomTrailing) {
-                        CalorieRingView(consumed: data.caloriesConsumed, goal: data.caloriesGoal,
-                                        lineWidth: 10, fontSize: 22)
-                            .frame(width: 82, height: 82)
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(calorieGreen)
-                            .background(Circle().fill(bgColor).frame(width: 16, height: 16))
-                    }
+                    CalorieRingView(consumed: data.caloriesConsumed, goal: data.caloriesGoal,
+                                    lineWidth: 10, fontSize: 22)
+                        .frame(width: 82, height: 82)
                     Text("\(data.caloriesConsumed)/\(data.caloriesGoal) cal")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(textSecondary)
                 }
-            }
-            .frame(width: 100)
+                .frame(width: 100)
 
-            VStack(spacing: 10) {
-                MacroRow(label: "Protein", current: data.proteinConsumed, goal: data.proteinGoal, unit: "g", color: proteinBlue)
-                MacroRow(label: "Carbs", current: data.carbsConsumed, goal: data.carbsGoal, unit: "g", color: carbsOrange)
-                MacroRow(label: "Fat", current: data.fatConsumed, goal: data.fatGoal, unit: "g", color: fatPurple)
+                VStack(spacing: 10) {
+                    MacroRow(label: "Protein", current: data.proteinConsumed, goal: data.proteinGoal, unit: "g", color: proteinBlue)
+                    MacroRow(label: "Carbs", current: data.carbsConsumed, goal: data.carbsGoal, unit: "g", color: carbsOrange)
+                    MacroRow(label: "Fat", current: data.fatConsumed, goal: data.fatGoal, unit: "g", color: fatPurple)
+                }
+            }
+
+            Link(destination: addPhotoURL) {
+                HStack(spacing: 6) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Log Meal")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(accentPurple))
             }
         }
         .padding(14)
+        .widgetURL(quickLogURL)
     }
 
     // MARK: Lock Screen — Circular
