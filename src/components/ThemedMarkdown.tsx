@@ -48,6 +48,32 @@ export default function ThemedMarkdown({
       marginVertical: 6,
       opacity: 0.85,
     },
+    table: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 6,
+      marginVertical: 6,
+    },
+    thead: {
+      backgroundColor: 'transparent',
+    },
+    th: {
+      padding: 8,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+      flex: 1,
+    },
+    td: {
+      padding: 8,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+      flex: 1,
+    },
+    tr: {
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+      flexDirection: 'row' as const,
+    },
     hr: {
       backgroundColor: colors.border,
       height: 1,
