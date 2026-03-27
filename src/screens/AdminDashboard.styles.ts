@@ -305,4 +305,115 @@ export default StyleSheet.create({
     fontSize: 13,
     paddingVertical: 20,
   },
+
+  // ── Feedback section ──────────────────────────────────────────────
+  feedbackCard: {
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  feedbackHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  feedbackUser: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  feedbackBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 6,
+  },
+  feedbackBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  feedbackTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  feedbackDesc: {
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  feedbackMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 4,
+  },
+  feedbackMetaText: {
+    fontSize: 11,
+  },
+  feedbackScreenshots: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  feedbackThumb: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+  },
+  feedbackExpanded: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  feedbackDeviceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  feedbackDeviceLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  feedbackDeviceValue: {
+    fontSize: 11,
+  },
+  feedbackNotesInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
+    marginTop: 8,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  feedbackStatusRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+  },
+  feedbackStatusBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  feedbackStatusBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  feedbackSaveBtn: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  feedbackSaveBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+  },
 });

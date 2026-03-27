@@ -31,6 +31,7 @@ import FriendProfileScreen from './src/screens/FriendProfileScreen';
 import ProfilePage from './src/screens/ProfilePage';
 import SettingsPage from './src/screens/SettingsPage';
 import ChatScreen from './src/screens/ChatScreen';
+import FeedbackScreen from './src/screens/FeedbackScreen';
 import { loadUserProfile, clearUserProfile, clearMessages } from './src/services/storage';
 import { clearAllSavedMeals } from './src/services/savedMeals';
 import { clearOfflineData } from './src/services/offlineStore';
@@ -356,6 +357,7 @@ function AppInner() {
               <RootStack.Screen name="ProfileScreen" component={ProfilePage} />
               <RootStack.Screen name="SettingsScreen" component={SettingsPage} />
               <RootStack.Screen name="ChatScreen" component={ChatScreen} />
+              <RootStack.Screen name="FeedbackScreen" component={FeedbackScreen} />
             </>
           )}
           {screen === 'emailVerification' && (

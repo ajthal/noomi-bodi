@@ -199,6 +199,25 @@ export default function SettingsPage(): React.JSX.Element {
         </View>
       </View>
 
+      {/* Support */}
+      <View style={s.section}>
+        <Text style={[s.sectionTitle, { color: colors.text }]}>Support</Text>
+        <TouchableOpacity
+          style={[s.feedbackRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.navigate('FeedbackScreen', { sourceScreen: 'Settings' })}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chatbox-ellipses-outline" size={20} color={colors.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={[s.feedbackRowTitle, { color: colors.text }]}>Submit Feedback</Text>
+            <Text style={[s.feedbackRowSub, { color: colors.textSecondary }]}>
+              Report a bug or suggest a feature
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </TouchableOpacity>
+      </View>
+
       {/* Actions */}
       <View style={s.section}>
         <Button title="Sign Out" onPress={handleSignOut} color="#555" />
@@ -289,6 +308,22 @@ const s = StyleSheet.create({
   themePillText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  feedbackRowTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  feedbackRowSub: {
+    fontSize: 12,
+    marginTop: 2,
   },
   resetSpacer: {
     height: 12,

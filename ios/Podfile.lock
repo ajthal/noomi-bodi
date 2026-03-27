@@ -2040,6 +2040,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - RNDeviceInfo (15.0.2):
+    - React-Core
   - RNFBApp (23.8.6):
     - Firebase/CoreOnly (= 12.8.0)
     - hermes-engine
@@ -2158,7 +2160,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - RNSVG (15.15.3):
+  - RNSVG (15.15.4):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2179,9 +2181,9 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-    - RNSVG/common (= 15.15.3)
+    - RNSVG/common (= 15.15.4)
     - Yoga
-  - RNSVG/common (15.15.3):
+  - RNSVG/common (15.15.4):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2315,6 +2317,7 @@ DEPENDENCIES:
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - "RNAppleAuthentication (from `../node_modules/@invertase/react-native-apple-authentication`)"
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
+  - RNDeviceInfo (from `../node_modules/react-native-device-info`)
   - "RNFBApp (from `../node_modules/@react-native-firebase/app`)"
   - "RNFBMessaging (from `../node_modules/@react-native-firebase/messaging`)"
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
@@ -2500,6 +2503,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@invertase/react-native-apple-authentication"
   RNCAsyncStorage:
     :path: "../node_modules/@react-native-async-storage/async-storage"
+  RNDeviceInfo:
+    :path: "../node_modules/react-native-device-info"
   RNFBApp:
     :path: "../node_modules/@react-native-firebase/app"
   RNFBMessaging:
@@ -2609,11 +2614,12 @@ SPEC CHECKSUMS:
   ReactNativeDependencies: 6fa8d8ad596377ad8dff1b198548df54e60176f5
   RNAppleAuthentication: d6fe579e5f43cf8db54bdc48518bccea61c592a4
   RNCAsyncStorage: e85a99325df9eb0191a6ee2b2a842644c7eb29f4
+  RNDeviceInfo: d79872e11c8e9c4de0d65b0ee6e0cee719f37fea
   RNFBApp: a279e708283bdada105e97ae1a6861639667e960
   RNFBMessaging: 754dd54e516c0e505172ea810a4f10126961633a
   RNGoogleSignin: b4d32af72a0ead52255910e5fa57163055023b67
   RNScreens: fb11b7412bcbdc0ffafcaf9174938d998d4e2bc4
-  RNSVG: 13970bfde0ea9c9e10e01ab0d7b4a6cde11fca1b
+  RNSVG: 2ead7004a54d1cded41af4e6ee29104e94ba48c6
   RNVectorIcons: af977c18ed27deba54ed038b439fca2911a08cfc
   SwiftUIIntrospect: fee9aa07293ee280373a591e1824e8ddc869ba5d
   Yoga: 772166513f9cd2d61a6251d0dacbbfaa5b537479

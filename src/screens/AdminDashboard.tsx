@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -40,6 +42,12 @@ import {
   type ActiveUserCounts,
   type RoleCount,
 } from '../services/adminAnalytics';
+import {
+  getAdminFeedback,
+  updateFeedbackStatus,
+  type FeedbackItem,
+  type FeedbackStatus,
+} from '../services/feedback';
 import s from './AdminDashboard.styles';
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -89,6 +97,21 @@ const PIE_COLORS = [
 
 const ROLES = ['admin', 'beta', 'pro', 'standard', 'byok'];
 
+const CATEGORY_COLORS: Record<string, string> = {
+  bug: '#d32f2f',
+  feature: '#2196F3',
+  other: '#607D8B',
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  new: '#7C3AED',
+  reviewed: '#FF9800',
+  resolved: '#4CAF50',
+  closed: '#607D8B',
+};
+
+const FEEDBACK_STATUSES: FeedbackStatus[] = ['new', 'reviewed', 'resolved', 'closed'];
+
 // ── Component ─────────────────────────────────────────────────────────
 
 export default function AdminDashboard(): React.JSX.Element {
@@ -115,11 +138,15 @@ export default function AdminDashboard(): React.JSX.Element {
 
   const [chartDays, setChartDays] = useState(30);
   const [rolePickerUser, setRolePickerUser] = useState<UserUsage | null>(null);
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
+  const [expandedFeedback, setExpandedFeedback] = useState<string | null>(null);
+  const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
+  const [editingStatus, setEditingStatus] = useState<Record<string, FeedbackStatus>>({});
 
   const fetchAll = useCallback(async () => {
     try {
       setError(null);
-      const [ov, daily, userList, recent, tools, toolCosts, monthly, active, roles, errors] = await Promise.all([
+      const [ov, daily, userList, recent, tools, toolCosts, monthly, active, roles, errors, feedback] = await Promise.all([
         getUsageOverview(),
         getUsageByDay(chartDays || 365),
         getUserUsageStats(),
@@ -130,6 +157,7 @@ export default function AdminDashboard(): React.JSX.Element {
         getActiveUserCounts(),
         getRoleDistribution(),
         getRecentErrors(10),
+        getAdminFeedback(),
       ]);
       setOverview(ov);
       setDailyUsage(daily);
@@ -141,6 +169,7 @@ export default function AdminDashboard(): React.JSX.Element {
       setActiveUsers(active);
       setRoleDistribution(roles);
       setRecentErrors(errors);
+      setFeedbackItems(feedback);
     } catch (e) {
       setError(getUserFriendlyError(e));
     }
@@ -217,6 +246,24 @@ export default function AdminDashboard(): React.JSX.Element {
     } catch (e) {
       Alert.alert('Role update failed', getUserFriendlyError(e));
     }
+  }, []);
+
+  const handleFeedbackSave = useCallback(async (item: FeedbackItem) => {
+    const newStatus = editingStatus[item.id] ?? item.status;
+    const newNotes = editingNotes[item.id] ?? item.adminNotes ?? '';
+    try {
+      await updateFeedbackStatus(item.id, newStatus, newNotes);
+      setFeedbackItems(prev => prev.map(f =>
+        f.id === item.id ? { ...f, status: newStatus, adminNotes: newNotes } : f,
+      ));
+      setExpandedFeedback(null);
+    } catch (e) {
+      Alert.alert('Update failed', getUserFriendlyError(e));
+    }
+  }, [editingStatus, editingNotes]);
+
+  const toggleFeedbackExpand = useCallback((id: string) => {
+    setExpandedFeedback(prev => prev === id ? null : id);
   }, []);
 
   // ── Render states ─────────────────────────────────────────────────
@@ -638,6 +685,162 @@ export default function AdminDashboard(): React.JSX.Element {
             </>
           ) : (
             <Text style={[s.emptyText, { color: colors.textTertiary }]}>No users with API usage yet</Text>
+          )}
+        </View>
+
+        {/* ─── User Feedback ─────────────────────────────────────────── */}
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>
+            User Feedback{feedbackItems.length > 0 ? ` (${feedbackItems.length})` : ''}
+          </Text>
+          {feedbackItems.length > 0 ? (
+            feedbackItems.map(item => {
+              const isExpanded = expandedFeedback === item.id;
+              const catColor = CATEGORY_COLORS[item.category] ?? '#607D8B';
+              const statusColor = STATUS_COLORS[item.status] ?? '#607D8B';
+              const di = item.deviceInfo as any;
+
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[s.feedbackCard, { backgroundColor: colors.surface }]}
+                  onPress={() => toggleFeedbackExpand(item.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={s.feedbackHeader}>
+                    <Text style={[s.feedbackUser, { color: colors.text }]} numberOfLines={1}>
+                      {item.username ?? item.displayName ?? 'Unknown User'}
+                    </Text>
+                    <View style={[s.feedbackBadge, { backgroundColor: catColor + '20' }]}>
+                      <Text style={[s.feedbackBadgeText, { color: catColor }]}>{item.category}</Text>
+                    </View>
+                    <View style={[s.feedbackBadge, { backgroundColor: statusColor + '20' }]}>
+                      <Text style={[s.feedbackBadgeText, { color: statusColor }]}>{item.status}</Text>
+                    </View>
+                  </View>
+
+                  <Text style={[s.feedbackTitle, { color: colors.text }]}>{item.title}</Text>
+                  {item.description ? (
+                    <Text
+                      style={[s.feedbackDesc, { color: colors.textSecondary }]}
+                      numberOfLines={isExpanded ? undefined : 2}
+                    >
+                      {item.description}
+                    </Text>
+                  ) : null}
+
+                  <View style={s.feedbackMeta}>
+                    <Text style={[s.feedbackMetaText, { color: colors.textTertiary }]}>
+                      {timeAgo(item.createdAt)}
+                    </Text>
+                    {item.currentScreen ? (
+                      <Text style={[s.feedbackMetaText, { color: colors.textTertiary }]}>
+                        Screen: {item.currentScreen}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {item.screenshotUrls.length > 0 && (
+                    <View style={s.feedbackScreenshots}>
+                      {item.screenshotUrls.map((url, i) => (
+                        <Image
+                          key={`${item.id}-ss-${i}`}
+                          source={{ uri: url }}
+                          style={s.feedbackThumb}
+                        />
+                      ))}
+                    </View>
+                  )}
+
+                  {isExpanded && (
+                    <View style={[s.feedbackExpanded, { borderTopColor: colors.borderLight }]}>
+                      {di && (
+                        <>
+                          <Text style={[s.feedbackDeviceLabel, { color: colors.textSecondary, marginBottom: 4 }]}>
+                            Device Info
+                          </Text>
+                          {di.model && (
+                            <View style={s.feedbackDeviceRow}>
+                              <Text style={[s.feedbackDeviceLabel, { color: colors.textTertiary }]}>Device</Text>
+                              <Text style={[s.feedbackDeviceValue, { color: colors.textTertiary }]}>{di.model}</Text>
+                            </View>
+                          )}
+                          {di.os && (
+                            <View style={s.feedbackDeviceRow}>
+                              <Text style={[s.feedbackDeviceLabel, { color: colors.textTertiary }]}>OS</Text>
+                              <Text style={[s.feedbackDeviceValue, { color: colors.textTertiary }]}>
+                                {di.os} {di.osVersion}
+                              </Text>
+                            </View>
+                          )}
+                          {di.appVersion && (
+                            <View style={s.feedbackDeviceRow}>
+                              <Text style={[s.feedbackDeviceLabel, { color: colors.textTertiary }]}>Version</Text>
+                              <Text style={[s.feedbackDeviceValue, { color: colors.textTertiary }]}>
+                                {di.appVersion} ({di.buildNumber})
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      )}
+
+                      <Text style={[s.feedbackDeviceLabel, { color: colors.textSecondary, marginTop: 10, marginBottom: 4 }]}>
+                        Admin Notes
+                      </Text>
+                      <TextInput
+                        style={[s.feedbackNotesInput, {
+                          color: colors.text,
+                          backgroundColor: colors.inputBg,
+                          borderColor: colors.inputBorder,
+                        }]}
+                        placeholder="Add notes..."
+                        placeholderTextColor={colors.textTertiary}
+                        value={editingNotes[item.id] ?? item.adminNotes ?? ''}
+                        onChangeText={text => setEditingNotes(prev => ({ ...prev, [item.id]: text }))}
+                        multiline
+                      />
+
+                      <Text style={[s.feedbackDeviceLabel, { color: colors.textSecondary, marginTop: 10, marginBottom: 4 }]}>
+                        Update Status
+                      </Text>
+                      <View style={s.feedbackStatusRow}>
+                        {FEEDBACK_STATUSES.map(st => {
+                          const stColor = STATUS_COLORS[st];
+                          const active = (editingStatus[item.id] ?? item.status) === st;
+                          return (
+                            <TouchableOpacity
+                              key={st}
+                              style={[
+                                s.feedbackStatusBtn,
+                                { borderColor: stColor },
+                                active && { backgroundColor: stColor },
+                              ]}
+                              onPress={() => setEditingStatus(prev => ({ ...prev, [item.id]: st }))}
+                            >
+                              <Text style={[
+                                s.feedbackStatusBtnText,
+                                { color: active ? '#fff' : stColor },
+                              ]}>
+                                {st}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      <TouchableOpacity
+                        style={[s.feedbackSaveBtn, { backgroundColor: colors.accent }]}
+                        onPress={() => handleFeedbackSave(item)}
+                      >
+                        <Text style={s.feedbackSaveBtnText}>Save Changes</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <Text style={[s.emptyText, { color: colors.textTertiary }]}>No feedback submitted yet</Text>
           )}
         </View>
 

@@ -20,9 +20,10 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **AddFriendModal** — BottomSheet with user search, friendship status buttons (Follow/Pending/Accept/Friends)
 - **FriendProfileScreen** — RootStack screen showing friend's profile, stats card (streak, days tracked, adherence), plan summary, weight progress, average daily macros (all via `get_friend_stats` RPC); remove friend action; hidden if profile is private
 - **ProfilePage** — pushable RootStack screen (via TopBar profile picture). User profile picture, username, bio, stats, goals summary, "Edit Profile" button. Header has back arrow (left) and gear icon (right, navigates to SettingsScreen).
-- **SettingsPage** — pushable RootStack screen (via ProfilePage gear icon). Privacy toggle, API key, appearance, sign out, reset profile. Includes themed back button when standalone.
+- **SettingsPage** — pushable RootStack screen (via ProfilePage gear icon). Privacy toggle, API key, appearance, sign out, reset profile, "Submit Feedback" link. Includes themed back button when standalone.
+- **FeedbackScreen** — RootStack screen for submitting bug reports, feature requests, and general feedback. Category picker (bug/feature/other), title, description, manual screenshot attachment (photo library), auto-captured device info (model, OS, app version, screen dimensions via `react-native-device-info`). Entry points: TopBar bug icon (passes current tab as `sourceScreen`), SettingsPage "Submit Feedback" row. Styles in separate `FeedbackScreen.styles.ts` using `createStyles(colors, isDark)` pattern.
 - **EditProfileScreen** — RootStack screen for editing username, display name, bio, profile picture upload
-- **AdminDashboard** — admin-only page in the flat pager (conditionally shown)
+- **AdminDashboard** — admin-only page in the flat pager (conditionally shown); includes "User Feedback" section showing all submitted feedback with expandable cards, status management (new/reviewed/resolved/closed), admin notes, device info, and screenshot thumbnails
 - **OnboardingScreen** — multi-step onboarding (API key, profile info, goals, activity, account, username, details, Claude plan); styles in separate `OnboardingScreen.styles.tsx` using `createStyles(colors, isDark)` pattern; step 1 shows full-width primary button + "Returning user? Sign in here" link (navigates to `SignInScreen` via `onSignIn` prop)
 - **SignInScreen** — standalone sign-in screen shown after sign-out (without profile reset); supports email/password, Apple, and Google sign-in; optional `onBack` prop shows a back arrow (only when navigated from onboarding's "Sign in here" link)
 - **EmailVerificationScreen** — blocks entry to main app until email is verified; polls session every 5s, has resend with 60s cooldown; skipped for social sign-ins (Google/Apple)
@@ -47,6 +48,7 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **notifications.ts** — FCM token registration/unregistration, `sendNotification()` (invokes Edge Function), `sendMilestoneNotifications()`, `claim_device_token` RPC call for stale token cleanup
 - **widgetBridge.ts** — native bridge to write widget data to App Group UserDefaults and reload WidgetKit timelines via `SharedGroupPreferences`
 - **widgetDataSync.ts** — aggregates today's calories/macros from `daily_logs` and goals from `user_plans`, then calls `updateWidgetData()` to push to the widget
+- **feedback.ts** — feedback CRUD (submit, admin query, status update), screenshot upload to `feedback-screenshots` bucket, device context collection via `react-native-device-info`
 
 ### iOS Widgets (ios/NoomiBodi Widget/)
 Native WidgetKit extension written in Swift. Shares data with the main app via App Group `group.noomibodi` using `UserDefaults(suiteName:)` with key `widgetData` (JSON string).
@@ -100,8 +102,8 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 - **Social Auth**: Apple Sign-In via `@invertase/react-native-apple-authentication` (library auto-hashes nonce with SHA256 before sending to Apple, so pass RAW nonce to both the library and Supabase); Google Sign-In via `@react-native-google-signin/google-signin` (patched native iOS code via `patch-package` to support nonce parameter; Google does NOT auto-hash, so pass SHA256 hashed nonce to Google + raw nonce to Supabase `signInWithIdToken`)
 - **Identity Linking**: Supabase automatic linking is enabled by default — same email across Google, Apple, and email/password maps to one account
 - **Email Verification**: After email/password sign-up, user completes onboarding but is blocked from the main app by `EmailVerificationScreen` until `email_confirmed_at` is set; social sign-ins skip this
-- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`; onboarding step 1 "Sign in here" sets `signInFromOnboarding` flag → `SignInScreen` gets `onBack` to return to onboarding; `RootStack` includes `EditProfileScreen`, `FriendProfileScreen`, `ProfileScreen`, `SettingsScreen`, and `ChatScreen` as pushable screens on top of `MainTabs`
-- **Flat Pager Navigation**: `MainTabs` uses `createMaterialTopTabNavigator` as a flat swipeable pager with all screens registered individually: Home, MyMeals, SharedMeals, Reports, Insights, Social (, Admin). A persistent `TopBar` (profile picture left → ProfileScreen, chat bubble right → ChatScreen) sits above the pager. A `SubTabBar` (icon-based segmented control) appears for multi-page tab groups (Meals, Reports). A `CustomBottomTabBar` groups pages into tab groups (Home, Meals, Reports, Social, Admin) and highlights the active group. Navigation between tabs via swipe or bottom tab press; sub-page switching via SubTabBar or swipe.
+- **App Navigation States**: `App.tsx` manages screen state as `'loading' | 'onboarding' | 'signIn' | 'emailVerification' | 'main'`; sign-out goes to `signIn`, profile reset goes to `onboarding`; onboarding step 1 "Sign in here" sets `signInFromOnboarding` flag → `SignInScreen` gets `onBack` to return to onboarding; `RootStack` includes `EditProfileScreen`, `FeedbackScreen`, `FriendProfileScreen`, `ProfileScreen`, `SettingsScreen`, and `ChatScreen` as pushable screens on top of `MainTabs`
+- **Flat Pager Navigation**: `MainTabs` uses `createMaterialTopTabNavigator` as a flat swipeable pager with all screens registered individually: Home, MyMeals, SharedMeals, Reports, Insights, Social (, Admin). A persistent `TopBar` (profile picture left → ProfileScreen, bug icon → FeedbackScreen, chat bubble right → ChatScreen) sits above the pager. A `SubTabBar` (icon-based segmented control) appears for multi-page tab groups (Meals, Reports). A `CustomBottomTabBar` groups pages into tab groups (Home, Meals, Reports, Social, Admin) and highlights the active group. Navigation between tabs via swipe or bottom tab press; sub-page switching via SubTabBar or swipe.
 - **Deep Links**: `useDeepLink` hook in QuickLogPage handles `noomibodi://quick-log` and `noomibodi://add-photo` (both launch camera). Widget uses `add-photo` for camera button, `quick-log` as default tap URL.
 - **Social Features**: Bidirectional friendships (both must accept), privacy toggle (hides activity/leaderboard), streak milestones auto-logged on meal log, weekly leaderboard (Mon-Sun adherence %), meal sharing between accepted friends
 - **Impersonation**: `ImpersonationContext` — admin-only session switching for testing other accounts; `ImpersonationBanner` red border when active; `ImpersonateModal` for admin dashboard search
@@ -141,7 +143,7 @@ iOS push notifications via Firebase Cloud Messaging (FCM) → APNs.
 - iOS widget accent color matches the app (`0x7C3AED` in `NoomiBodi_Widget.swift`)
 
 ## Database (Supabase + RLS)
-Tables: `profiles`, `public_profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`, `device_tokens`, `meal_plans`
+Tables: `profiles`, `public_profiles`, `user_plans`, `saved_meals`, `daily_logs`, `weight_logs`, `user_insights`, `ai_usage_logs`, `friendships`, `activity_feed`, `shared_meals`, `device_tokens`, `meal_plans`, `feedback`
 Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
 
 **Social columns on `profiles`:** `username` (UNIQUE), `display_name`, `profile_picture_url`, `bio`, `is_private` (default false)
@@ -163,7 +165,12 @@ Roles in `profiles.role`: `admin`, `beta`, `pro`, `standard`, `byok` (default)
 - `claim_device_token(p_fcm_token)` — SECURITY DEFINER function that deletes stale `device_tokens` entries for the same FCM token belonging to a different user. Called during token registration to handle device reuse across accounts.
 - `get_friend_stats(p_friend_id)` — SECURITY DEFINER function returning JSONB with friend's stats (streak, adherence), plan, weight progress, and avg macros. Checks accepted friendship and non-private profile. Called by `FriendProfileScreen` via `reportData.getFriendStats()`.
 
-**Storage bucket:** `profile-pictures` (public). Folder structure: `{user_id}/{timestamp}.jpg`. URLs stored in `profiles.profile_picture_url`.
+**Feedback table:**
+- `feedback` — TestFlight bug reports and feature requests. Columns: `id`, `user_id`, `category` (bug/feature/other), `title`, `description`, `screenshot_urls` (text[]), `device_info` (jsonb), `current_screen`, `status` (new/reviewed/resolved/closed), `admin_notes`, timestamps. RLS: users insert/read own; admins read/update all.
+
+**Storage buckets:**
+- `profile-pictures` (public). Folder structure: `{user_id}/{timestamp}.jpg`. URLs stored in `profiles.profile_picture_url`.
+- `feedback-screenshots` (public). Folder structure: `{user_id}/{timestamp}.jpg`. URLs stored in `feedback.screenshot_urls` array.
 
 See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
 
@@ -184,6 +191,7 @@ See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
 - @react-native-google-signin/google-signin (Google Sign-In, patched via patch-package for iOS nonce support)
 - @react-native-firebase/app, @react-native-firebase/messaging (push notifications via FCM; use modular API)
 - js-sha256 (nonce hashing for Google Sign-In)
+- react-native-device-info (device context for feedback)
 - patch-package (postinstall script applies native iOS patches)
 
 ## Sensitive Files (gitignored)

@@ -367,6 +367,32 @@ Saved multi-day meal plans for structured eating schedules.
 
 ---
 
+### 14. `feedback`
+
+TestFlight bug reports, feature requests, and general feedback from users.
+
+**Columns:**
+- `id` (UUID, Primary Key) - Unique feedback identifier
+- `user_id` (UUID, Foreign Key → `auth.users.id`, ON DELETE CASCADE) - Submitter
+- `category` (TEXT, Required) - One of: `bug`, `feature`, `other`
+- `title` (TEXT, Required) - Short summary
+- `description` (TEXT) - Detailed description
+- `screenshot_urls` (TEXT[], Default: `{}`) - Array of public URLs to uploaded screenshots
+- `device_info` (JSONB, Default: `{}`) - Auto-captured device context (os, osVersion, model, appVersion, buildNumber, screen dimensions)
+- `current_screen` (TEXT) - Screen the user was on when they initiated feedback
+- `status` (TEXT, Default: `new`) - One of: `new`, `reviewed`, `resolved`, `closed`
+- `admin_notes` (TEXT) - Internal admin notes
+- `created_at` (TIMESTAMP WITH TIME ZONE) - Submission time
+- `updated_at` (TIMESTAMP WITH TIME ZONE) - Last update time
+
+**RLS Policies:**
+- Users can insert their own feedback (`auth.uid() = user_id`)
+- Users can read their own feedback
+- Admins can read all feedback (via `is_admin()`)
+- Admins can update all feedback (status, admin_notes)
+
+---
+
 ## Supabase Storage
 
 ### `profile-pictures` Bucket
@@ -379,6 +405,16 @@ Public bucket for user profile images. URLs are saved in `profiles.profile_pictu
 - Users can upload to their own folder (`{user_id}/`)
 - Anyone can view profile pictures (public bucket)
 - Users can update/delete their own pictures
+
+### `feedback-screenshots` Bucket
+
+Public bucket for feedback screenshot attachments. URLs are saved in `feedback.screenshot_urls`.
+
+**Folder structure:** `{user_id}/{timestamp}.jpg`
+
+**Storage Policies:**
+- Authenticated users can upload screenshots
+- Anyone can view screenshots (public bucket)
 
 ---
 
@@ -403,7 +439,8 @@ auth.users (Supabase managed)
     ├── shared_meals (1:many as sender)
     ├── shared_meals (1:many as recipient)
     ├── device_tokens (1:many) - FCM tokens for push notifications
-    └── meal_plans (1:many) - Structured multi-day eating plans
+    ├── meal_plans (1:many) - Structured multi-day eating plans
+    └── feedback (1:many) - Bug reports, feature requests, feedback
 ```
 
 ---
