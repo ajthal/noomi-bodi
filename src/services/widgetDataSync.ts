@@ -11,8 +11,9 @@ const DEFAULT_GOALS = {
 export async function syncWidgetData(userId: string): Promise<void> {
   try {
     const today = getTodayDate();
-    const startOfDay = `${today}T00:00:00.000Z`;
-    const endOfDay = `${today}T23:59:59.999Z`;
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
 
     const [mealsResult, planResult] = await Promise.all([
       supabase

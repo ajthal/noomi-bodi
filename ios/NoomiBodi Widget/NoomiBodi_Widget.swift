@@ -70,18 +70,41 @@ struct Provider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let entry = SimpleEntry(date: Date(), widgetData: loadData())
+        let entry = SimpleEntry(date: Date(), widgetData: loadTodayData())
         completion(entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> ()) {
-        let entry = SimpleEntry(date: Date(), widgetData: loadData())
-        let refreshDate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
-        let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
+        var entries: [SimpleEntry] = []
+
+        // Current entry with today's data
+        entries.append(SimpleEntry(date: Date(), widgetData: loadTodayData()))
+
+        // Schedule a reset entry at midnight so the widget shows zeros for the new day
+        let calendar = Calendar.current
+        if let midnight = calendar.nextDate(after: Date(), matching: DateComponents(hour: 0, minute: 0, second: 0), matchingPolicy: .nextTime) {
+            entries.append(SimpleEntry(date: midnight, widgetData: nil))
+        }
+
+        // Refresh 15 minutes from now (or at midnight, whichever is sooner)
+        let fifteenMin = calendar.date(byAdding: .minute, value: 15, to: Date())!
+        let timeline = Timeline(entries: entries, policy: .after(fifteenMin))
         completion(timeline)
     }
 
-    private func loadData() -> WidgetData? {
+    /// Load data from UserDefaults, returning nil if the stored date doesn't match today.
+    private func loadTodayData() -> WidgetData? {
+        guard let data = loadRawData() else { return nil }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let todayString = formatter.string(from: Date())
+
+        guard data.date == todayString else { return nil }
+        return data
+    }
+
+    private func loadRawData() -> WidgetData? {
         guard let defaults = UserDefaults(suiteName: "group.noomibodi"),
               let jsonString = defaults.string(forKey: "widgetData"),
               let jsonData = jsonString.data(using: .utf8) else {
