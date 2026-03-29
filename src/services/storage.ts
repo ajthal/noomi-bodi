@@ -212,7 +212,7 @@ export async function clearConversationSummary(): Promise<void> {
 
 export async function saveApiKey(key: string): Promise<void> {
   try {
-    await AsyncStorage.setItem(API_KEY_KEY, key);
+    await AsyncStorage.setItem(API_KEY_KEY, key.trim());
     await AsyncStorage.removeItem(LEGACY_API_KEY).catch(() => {});
   } catch (error) {
     console.error('Error saving API key:', error);
@@ -226,7 +226,7 @@ export async function getApiKey(): Promise<string | null> {
       key = await AsyncStorage.getItem(LEGACY_API_KEY);
       if (key) await saveApiKey(key);
     }
-    return key;
+    return key?.trim() || null;
   } catch (error) {
     console.error('Error loading API key:', error);
     return null;

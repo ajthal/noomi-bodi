@@ -29,11 +29,11 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 - **EmailVerificationScreen** — blocks entry to main app until email is verified; polls session every 5s, has resend with 60s cooldown; skipped for social sign-ins (Google/Apple)
 
 ### Services (src/services/)
-- **claude.ts** — Anthropic Messages API integration (model: `claude-sonnet-4-6`), system prompts, response parsing, AI usage logging, context window management (`windowMessages` trims oldest messages when approaching token budget, `summarizeDroppedMessages` generates a rolling conversation summary from trimmed messages)
+- **claude.ts** — Anthropic Messages API integration (model: `claude-sonnet-4-6`), system prompts, response parsing, AI usage logging (includes Anthropic error detail in `error_message` for failed requests), context window management (`windowMessages` trims oldest messages when approaching token budget, `summarizeDroppedMessages` generates a rolling conversation summary from trimmed messages)
 - **claudeTools.ts** — RAG tool definitions + execution for Claude function calling
 - **mealLog.ts** — daily_logs CRUD (Supabase + offline queue); triggers streak milestone check after successful log
 - **savedMeals.ts** — saved_meals CRUD + `clearAllSavedMeals()` for profile reset
-- **storage.ts** — AsyncStorage (API key, messages, conversation summary) + Supabase profiles/plans; `UserProfile` includes social fields (username, displayName, profilePictureUrl, bio, isPrivate); `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights; `clearMessages()` also clears conversation summary; `saveUserPlan(profile, planText, goals)` writes only to `user_plans` without touching `profiles` (avoids re-triggering check constraints); `parseMacrosFromPlanText(planText, fallback)` regex-extracts calorie/macro targets from AI-generated plan text
+- **storage.ts** — AsyncStorage (API key, messages, conversation summary) + Supabase profiles/plans; `UserProfile` includes social fields (username, displayName, profilePictureUrl, bio, isPrivate); `clearUserProfile()` clears profiles, user_plans, daily_logs, weight_logs, user_insights; `clearMessages()` also clears conversation summary; `saveUserPlan(profile, planText, goals)` writes only to `user_plans` without touching `profiles` (avoids re-triggering check constraints); `parseMacrosFromPlanText(planText, fallback)` regex-extracts calorie/macro targets from AI-generated plan text; API key is trimmed on save/load and validated to start with `sk-ant-` before use
 - **profileService.ts** — username validation, availability check, user search via `public_profiles` table (ILIKE on username/display_name), admin search via `profiles` (includes email/role), profile picture upload to Supabase Storage, partial profile field updates, `suggestUsernameFromEmail()`
 - **friendships.ts** — friend request CRUD (send/accept/decline/remove); accept/decline restricted to recipient via `following_id` filter; queries for accepted friends, pending received/sent, friendship status check between two users
 - **activityFeed.ts** — streak milestone insertion, duplicate checking, friend activity feed query (RLS handles privacy); `checkAndRecordMilestone()` for auto-logging milestones
@@ -61,7 +61,7 @@ Native WidgetKit extension written in Swift. Shares data with the main app via A
 - **Control Center** — timer toggle (placeholder, not wired to nutrition data)
 - **Live Activity** — Dynamic Island placeholder (not yet integrated)
 
-**Data flow:** Meal logged → Supabase `daily_logs` → `syncWidgetData()` fetches today's totals + goals → `updateWidgetData()` writes JSON to App Group UserDefaults → `reloadWidgets()` triggers `WidgetCenter.shared.reloadAllTimelines()` → widget reads `widgetData` and refreshes.
+**Data flow:** Meal logged → Supabase `daily_logs` → `syncWidgetData()` fetches today's totals + goals (using local-timezone day boundaries, not UTC) → `updateWidgetData()` writes JSON (including `date` field) to App Group UserDefaults → `reloadWidgets()` triggers `WidgetCenter.shared.reloadAllTimelines()` → widget reads `widgetData`, validates the `date` matches today (discards stale data), and refreshes. The widget timeline includes a midnight reset entry so it clears to the placeholder when the day rolls over.
 
 **Sync call sites:** QuickLogPage (after meal log, weight log, offline sync), ChatScreen (after send/AI response), MealsScreen (after save), SmartRecommendations (after suggested meal log), offlineStore (after offline sync).
 
