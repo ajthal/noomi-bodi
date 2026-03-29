@@ -224,6 +224,12 @@ export async function sendMessageToClaude(
     );
   }
 
+  if (!apiKey.startsWith('sk-ant-')) {
+    throw new Error(
+      'Invalid Claude API key format. Keys should start with "sk-ant-". Please check your API key in the Profile screen.',
+    );
+  }
+
   const startTime = Date.now();
   const hasImage = messages.some(m => m.imageBase64);
   let totalInputTokens = 0;
@@ -338,13 +344,18 @@ export async function sendMessageToClaude(
       }
       console.error('Error calling Claude API:', error?.message || error);
 
+      const apiErrorDetail = apiError?.error?.message || apiError?.error?.type;
+      const errorMsg = apiErrorDetail
+        ? `${error?.message || 'API error'} — ${apiErrorDetail}`
+        : (error?.message || 'Unknown error');
+
       logAiUsage({
         model: CLAUDE_MODEL,
         tokensInput: totalInputTokens,
         tokensOutput: totalOutputTokens,
         latencyMs: Date.now() - startTime,
         success: false,
-        errorMessage: error?.message || 'Unknown error',
+        errorMessage: errorMsg,
         toolsUsed: allToolsUsed,
       });
 
@@ -676,13 +687,19 @@ async function sendSimpleMessage(
 
     return response.data.content[0].text;
   } catch (error: any) {
+    const apiError = error?.response?.data;
+    const apiErrorDetail = apiError?.error?.message || apiError?.error?.type;
+    const errorMsg = apiErrorDetail
+      ? `${error?.message || 'API error'} — ${apiErrorDetail}`
+      : (error?.message || 'Unknown error');
+
     logAiUsage({
       model: CLAUDE_MODEL,
       tokensInput: 0,
       tokensOutput: 0,
       latencyMs: Date.now() - startTime,
       success: false,
-      errorMessage: error?.message || 'Unknown error',
+      errorMessage: errorMsg,
     });
     throw error;
   }
