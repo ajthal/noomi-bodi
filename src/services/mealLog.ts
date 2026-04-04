@@ -74,7 +74,7 @@ export async function logMeal(
 
   const imageUrl = imageBase64
     ? `data:image/jpeg;base64,${imageBase64}`
-    : null;
+    : data.imageUrl || null;
 
   try {
     const { data: row, error } = await supabase

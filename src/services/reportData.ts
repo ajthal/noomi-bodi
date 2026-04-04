@@ -121,13 +121,28 @@ export async function getOverviewStats(goalCalories: number): Promise<OverviewSt
   const dateSet = new Set(summaries.map(s => s.date));
   const daysTracked = dateSet.size;
 
-  // Streak: walk backwards from today
+  // Streak: walk backwards from today.
+  // Today counts if it has any logged meals; then check consecutive prior days.
   let streak = 0;
   const cursor = new Date();
   cursor.setHours(0, 0, 0, 0);
-  while (dateSet.has(toLocalDateString(cursor))) {
+  const todayKey = toLocalDateString(cursor);
+
+  if (dateSet.has(todayKey)) {
+    // Today has meals — include it and walk backwards
     streak++;
     cursor.setDate(cursor.getDate() - 1);
+    while (dateSet.has(toLocalDateString(cursor))) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+  } else {
+    // Today has no meals yet — start from yesterday
+    cursor.setDate(cursor.getDate() - 1);
+    while (dateSet.has(toLocalDateString(cursor))) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
   }
 
   // Adherence: current calendar week (Mon-Sun or last 7 days)
