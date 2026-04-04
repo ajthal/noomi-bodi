@@ -69,10 +69,10 @@ async function getAccessToken(): Promise<string> {
   return access_token;
 }
 
-async function sendFCM(token: string, title: string, body: string, data: Record<string, string>) {
+async function sendFCM(token: string, title: string, body: string, data: Record<string, string>): Promise<{ success: boolean; error?: string }> {
   const accessToken = await getAccessToken();
 
-  await fetch(
+  const resp = await fetch(
     `https://fcm.googleapis.com/v1/projects/${FCM_PROJECT_ID}/messages:send`,
     {
       method: 'POST',
@@ -94,6 +94,13 @@ async function sendFCM(token: string, title: string, body: string, data: Record<
       }),
     },
   );
+
+  if (!resp.ok) {
+    const errBody = await resp.text();
+    console.error(`FCM send failed (${resp.status}): ${errBody}`);
+    return { success: false, error: `FCM ${resp.status}: ${errBody}` };
+  }
+  return { success: true };
 }
 
 async function getTokensForUser(supabase: any, userId: string): Promise<string[]> {
@@ -227,12 +234,17 @@ serve(async (req) => {
     }
 
     let sent = 0;
+    const errors: string[] = [];
     for (const token of tokens) {
-      await sendFCM(token, title, body, notifData);
-      sent++;
+      const result = await sendFCM(token, title, body, notifData);
+      if (result.success) {
+        sent++;
+      } else {
+        errors.push(result.error || 'unknown');
+      }
     }
 
-    return new Response(JSON.stringify({ sent }), { status: 200 });
+    return new Response(JSON.stringify({ sent, total: tokens.length, errors: errors.length > 0 ? errors : undefined }), { status: 200 });
   } catch (err) {
     console.error('send-notification error:', err);
     return new Response(JSON.stringify({ error: 'Internal error' }), { status: 500 });

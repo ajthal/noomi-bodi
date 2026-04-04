@@ -221,6 +221,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginTop: 12,
+    marginBottom: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 14,
@@ -233,6 +234,7 @@ const s = StyleSheet.create({
   },
   container: {
     marginTop: 12,
+    marginBottom: 12,
     borderRadius: 14,
     borderWidth: 1,
     padding: 14,

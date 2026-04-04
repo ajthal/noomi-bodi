@@ -42,6 +42,23 @@ export function getUserFriendlyError(err: unknown): string {
     if (code.startsWith('PGRST')) return 'A database error occurred. Please try again.';
   }
 
+  // ── Anthropic API status codes (check before generic HTTP) ──────
+  const apiUrl: string | undefined = (err as any)?.config?.url ?? (err as any)?.request?.responseURL;
+  const isAnthropicApi = apiUrl?.includes('anthropic.com') || msg.includes('anthropic') || msg.includes('claude');
+
+  if (isAnthropicApi && status) {
+    if (status === 401)
+      return 'Your Claude API key is invalid. Please update it in Settings.';
+    if (status === 402)
+      return 'Your Anthropic account is out of credits. Please add credits at console.anthropic.com.';
+    if (status === 429)
+      return 'Claude rate limit reached. Please wait a moment and try again.';
+    if (status === 529)
+      return 'Claude is temporarily overloaded. Please try again in a few seconds.';
+    if (status >= 500 && status < 600)
+      return 'The Claude API is experiencing issues. Please try again shortly.';
+  }
+
   // ── HTTP status codes ────────────────────────────────────────────
   if (status) {
     if (status === 401) return 'Your session has expired. Please sign in again.';
@@ -53,15 +70,15 @@ export function getUserFriendlyError(err: unknown): string {
     if (status >= 500 && status < 600) return 'The server is having issues. Please try again shortly.';
   }
 
-  // ── Claude / Anthropic API errors ────────────────────────────────
+  // ── Claude / Anthropic API errors (message-based fallback) ──────
   if (msg.includes('rate limit') || msg.includes('rate_limit'))
     return 'AI rate limit reached. Please wait a moment and try again.';
   if (msg.includes('overloaded') || msg.includes('529'))
     return 'The AI service is busy right now. Please try again in a few seconds.';
   if (msg.includes('invalid api key') || msg.includes('invalid x-api-key') || msg.includes('authentication_error'))
-    return 'Your API key is invalid. Please check it in Settings.';
-  if (msg.includes('credit') || msg.includes('billing'))
-    return 'Your AI account has a billing issue. Please check your Anthropic account.';
+    return 'Your Claude API key is invalid. Please update it in Settings.';
+  if (msg.includes('credit') || msg.includes('billing') || msg.includes('insufficient_quota'))
+    return 'Your Anthropic account is out of credits. Please add credits at console.anthropic.com.';
 
   // ── Auth errors ──────────────────────────────────────────────────
   if (msg.includes('invalid login credentials') || msg.includes('invalid_credentials'))

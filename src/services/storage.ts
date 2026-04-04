@@ -17,6 +17,7 @@ export interface MealData {
   protein: number;
   carbs: number;
   fat: number;
+  imageUrl?: string;
 }
 
 export interface Message {
@@ -24,11 +25,22 @@ export interface Message {
   role: 'user' | 'assistant';
   timestamp: number;
   imageUri?: string;
+  /** @deprecated Use mealDataList for multi-meal support. Kept for backward compat with persisted messages. */
   mealData?: MealData;
   mealLogged?: boolean;
-  /** Claude detected a repeat meal and suggests saving it to the library. */
+  /** All meal data blocks parsed from this message. */
+  mealDataList?: MealData[];
+  /** Per-meal logged state (parallel to mealDataList). */
+  mealLoggedList?: boolean[];
+  /** Log IDs from daily_logs for each logged meal (parallel to mealDataList). */
+  mealLogIds?: (string | null)[];
+  /** @deprecated Use saveMealList for multi-meal support. */
   saveMealSuggestion?: MealData;
   mealSaved?: boolean;
+  /** All save-meal suggestions from this message. */
+  saveMealList?: MealData[];
+  /** Per-meal saved state (parallel to saveMealList). */
+  mealSavedList?: boolean[];
 }
 
 export type Gender = 'male' | 'female' | 'other';

@@ -150,7 +150,7 @@ function MainTabs({ showAdmin }: { showAdmin: boolean }) {
           }
           return null;
         }}
-        screenOptions={{ lazy: true }}
+        screenOptions={{ lazy: false }}
       >
         <Tab.Screen name="Home" component={QuickLogPage} />
         <Tab.Screen name="MyMeals" component={MealsScreen} />

@@ -586,8 +586,22 @@ export default function AdminDashboard(): React.JSX.Element {
                 accessor="count"
                 backgroundColor="transparent"
                 paddingLeft="15"
+                hasLegend={false}
                 absolute
               />
+              <View style={s.pieLegend}>
+                {toolPieData.map((item, i) => (
+                  <View key={i} style={s.pieLegendRow}>
+                    <View style={[s.pieLegendDot, { backgroundColor: item.color }]} />
+                    <Text style={[s.pieLegendLabel, { color: colors.text }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={[s.pieLegendCount, { color: colors.textSecondary }]}>
+                      {item.count}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             </View>
           </View>
         )}

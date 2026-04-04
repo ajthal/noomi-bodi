@@ -50,18 +50,61 @@ export default function SettingsPage(): React.JSX.Element {
     return `${key.slice(0, 4)}****${key.slice(-4)}`;
   };
 
+  const [validating, setValidating] = useState(false);
+
   const handleSave = async () => {
-    if (!apiKeyInput.trim()) {
+    const key = apiKeyInput.trim();
+    if (!key) {
       setStatus('Please enter a valid API key.');
       return;
     }
+    if (!key.startsWith('sk-ant-')) {
+      setStatus('Invalid key format. Keys should start with "sk-ant-".');
+      return;
+    }
+
+    setValidating(true);
+    setStatus('Validating API key...');
     try {
-      await saveApiKey(apiKeyInput.trim());
-      setSavedApiKey(apiKeyInput.trim());
+      // Test the key with a minimal API call
+      const axios = require('axios').default;
+      await axios.post(
+        'https://api.anthropic.com/v1/messages',
+        { model: 'claude-sonnet-4-6', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] },
+        {
+          headers: {
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        },
+      );
+      await saveApiKey(key);
+      setSavedApiKey(key);
       setApiKeyInput('');
-      setStatus('Claude API key saved.');
-    } catch (error) {
-      setStatus(getUserFriendlyError(error));
+      setStatus('API key validated and saved.');
+    } catch (error: any) {
+      const statusCode = error?.response?.status;
+      if (statusCode === 401) {
+        setStatus('Invalid API key. Please check and try again.');
+      } else if (statusCode === 402) {
+        setStatus('Your Anthropic account is out of credits. Please add credits at console.anthropic.com.');
+      } else if (statusCode === 429) {
+        // Rate limited means the key is valid
+        await saveApiKey(key);
+        setSavedApiKey(key);
+        setApiKeyInput('');
+        setStatus('API key validated and saved.');
+      } else {
+        // Other errors — still save the key but warn
+        await saveApiKey(key);
+        setSavedApiKey(key);
+        setApiKeyInput('');
+        setStatus('Key saved. Could not fully verify — please test by sending a message.');
+      }
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -163,7 +206,7 @@ export default function SettingsPage(): React.JSX.Element {
         />
         <View style={s.buttonRow}>
           <View style={s.buttonWrapper}>
-            <Button title="Save" onPress={handleSave} />
+            <Button title={validating ? "Validating..." : "Save"} onPress={handleSave} disabled={validating} />
           </View>
           <View style={s.buttonWrapper}>
             <Button title="Clear Key" color="#b00020" onPress={handleClear} />

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { withRetry } from '../utils/retry';
-import { MealData, UserProfile } from './storage';
+import { MealData, UserProfile, estimateDailyGoals } from './storage';
 import { cmToFeetInchesStr, kgToLbs } from '../utils/units';
 import { TOOL_DEFINITIONS, executeTool } from './claudeTools';
 import { supabase } from './supabase';
@@ -407,12 +407,41 @@ export function parseMealData(text: string): MealData | null {
   return null;
 }
 
+/** Extract ALL structured meal data blocks from the text. */
+export function parseAllMealData(text: string): MealData[] {
+  const results: MealData[] = [];
+  let searchFrom = 0;
+  while (true) {
+    const start = text.indexOf(MEAL_START, searchFrom);
+    const end = text.indexOf(MEAL_END, start + 1);
+    if (start === -1 || end === -1 || end <= start) break;
+    const jsonStr = text.slice(start + MEAL_START.length, end).trim();
+    try {
+      const data = JSON.parse(jsonStr);
+      if (
+        typeof data.name === 'string' &&
+        typeof data.calories === 'number' &&
+        typeof data.protein === 'number' &&
+        typeof data.carbs === 'number' &&
+        typeof data.fat === 'number'
+      ) {
+        results.push({
+          name: data.name,
+          calories: Math.round(data.calories),
+          protein: Math.round(data.protein),
+          carbs: Math.round(data.carbs),
+          fat: Math.round(data.fat),
+        });
+      }
+    } catch { /* skip malformed */ }
+    searchFrom = end + MEAL_END.length;
+  }
+  return results;
+}
+
 /** Remove `[MEAL_DATA]…[/MEAL_DATA]` markers so the user sees clean text. */
 export function stripMealMarkers(text: string): string {
-  const start = text.indexOf(MEAL_START);
-  const end = text.indexOf(MEAL_END);
-  if (start === -1 || end === -1 || end <= start) return text;
-  return (text.slice(0, start) + text.slice(end + MEAL_END.length)).trim();
+  return text.replace(/\[MEAL_DATA\][\s\S]*?\[\/MEAL_DATA\]/g, '').trim();
 }
 
 /** Extract a save-meal suggestion from `[SAVE_MEAL]…[/SAVE_MEAL]`, if present. */
@@ -445,12 +474,41 @@ export function parseSaveMealSuggestion(text: string): MealData | null {
   return null;
 }
 
+/** Extract ALL save-meal suggestions from the text. */
+export function parseAllSaveMealSuggestions(text: string): MealData[] {
+  const results: MealData[] = [];
+  let searchFrom = 0;
+  while (true) {
+    const start = text.indexOf(SAVE_MEAL_START, searchFrom);
+    const end = text.indexOf(SAVE_MEAL_END, start + 1);
+    if (start === -1 || end === -1 || end <= start) break;
+    const jsonStr = text.slice(start + SAVE_MEAL_START.length, end).trim();
+    try {
+      const data = JSON.parse(jsonStr);
+      if (
+        typeof data.name === 'string' &&
+        typeof data.calories === 'number' &&
+        typeof data.protein === 'number' &&
+        typeof data.carbs === 'number' &&
+        typeof data.fat === 'number'
+      ) {
+        results.push({
+          name: data.name,
+          calories: Math.round(data.calories),
+          protein: Math.round(data.protein),
+          carbs: Math.round(data.carbs),
+          fat: Math.round(data.fat),
+        });
+      }
+    } catch { /* skip malformed */ }
+    searchFrom = end + SAVE_MEAL_END.length;
+  }
+  return results;
+}
+
 /** Remove `[SAVE_MEAL]…[/SAVE_MEAL]` markers so the user sees clean text. */
 export function stripSaveMealMarkers(text: string): string {
-  const start = text.indexOf(SAVE_MEAL_START);
-  const end = text.indexOf(SAVE_MEAL_END);
-  if (start === -1 || end === -1 || end <= start) return text;
-  return (text.slice(0, start) + text.slice(end + SAVE_MEAL_END.length)).trim();
+  return text.replace(/\[SAVE_MEAL\][\s\S]*?\[\/SAVE_MEAL\]/g, '').trim();
 }
 
 /** Extract plan text from `[PLAN_START]…[PLAN_END]` markers. Returns null if not present. */
@@ -499,15 +557,21 @@ export function buildChatSystemPrompt(
   });
   const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+  const goals = estimateDailyGoals(profile);
+
   const lines = [
     "You are the same NoomiBodi coach who created this user's plan. You have the following context about them.",
     '',
     `**Current date & time**: ${dateStr}, ${timeStr}`,
+    'CRITICAL: The date and time above are authoritative and always accurate. NEVER infer the current time or date from conversation history. Each turn uses fresh, real-time data from the app.',
     '',
     '**Profile**',
     `Gender: ${profile.gender}, Age: ${profile.age}, Height: ${heightImperial}, Current weight: ${weightLbs} lb`,
     `Goal: ${profile.goal} weight${targetLbs ? `, Target weight: ${targetLbs} lb` : ''}`,
     `Activity level: ${profile.activityLevel}`,
+    '',
+    '**Daily Targets (source of truth — NEVER deviate from these numbers)**',
+    `Calories: ${goals.calories} cal, Protein: ${goals.protein}g, Carbs: ${goals.carbs}g, Fat: ${goals.fat}g`,
   ];
 
   if (profile.plan?.trim()) {
@@ -550,7 +614,9 @@ export function buildChatSystemPrompt(
     'Whenever you estimate or describe the nutritional content of a specific meal (whether from an image or conversation), include a JSON block wrapped in markers so the app can offer to log it:',
     '[MEAL_DATA]{"name":"Meal Name","calories":000,"protein":00,"carbs":00,"fat":00}[/MEAL_DATA]',
     'Always include this block when you give a nutritional breakdown for a meal. The values should be your best estimates in whole numbers (calories in kcal, macros in grams).',
+    'IMPORTANT: When the user tells you they ate something or describes a meal they had, ALWAYS include a [MEAL_DATA] block with your best estimate so they can log it immediately. Do NOT ask "would you like me to log that?" — just provide the data block. The app will show a Log button.',
     'If the user mentions a meal they eat regularly or that you recognize from earlier in the conversation, proactively offer to log it with the estimated nutritional content.',
+    'You may include MULTIPLE [MEAL_DATA] blocks in a single response if the user describes multiple meals or you are suggesting several options.',
     '',
     '**Saved meals instructions**',
     'If you notice the user has logged or mentioned the same meal multiple times during the conversation, or they explicitly say they eat something regularly, suggest saving it to their meal library by including:',
@@ -583,6 +649,7 @@ export function buildChatSystemPrompt(
     '- "What should I eat?" / "How much protein do I still need?" → get_remaining_macros',
     '',
     'ALWAYS use tools for historical/aggregate questions. Do NOT estimate from conversation history or the system prompt food log.',
+    "IMPORTANT: You already have today's complete meal data and running totals in the system prompt above. Do NOT call get_daily_totals for today's date — that data is already provided. Only use get_daily_totals when the user asks about a DIFFERENT date.",
     '',
     '**Meal planning & recipe capabilities**',
     'You can generate meal plans, suggest recipes, and recommend meals. When doing so:',
