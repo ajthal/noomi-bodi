@@ -322,21 +322,23 @@ struct NoomiBodi_WidgetEntryView: View {
 
     private func mediumView(data: WidgetData) -> some View {
         VStack(spacing: 8) {
-            HStack(spacing: 16) {
-                VStack(spacing: 5) {
-                    CalorieRingView(consumed: data.caloriesConsumed, goal: data.caloriesGoal,
-                                    lineWidth: 10, fontSize: 22)
-                        .frame(width: 82, height: 82)
-                    Text("\(data.caloriesConsumed)/\(data.caloriesGoal) cal")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(textSecondary)
-                }
-                .frame(width: 100)
+            Link(destination: quickLogURL) {
+                HStack(spacing: 16) {
+                    VStack(spacing: 5) {
+                        CalorieRingView(consumed: data.caloriesConsumed, goal: data.caloriesGoal,
+                                        lineWidth: 10, fontSize: 22)
+                            .frame(width: 82, height: 82)
+                        Text("\(data.caloriesConsumed)/\(data.caloriesGoal) cal")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(textSecondary)
+                    }
+                    .frame(width: 100)
 
-                VStack(spacing: 10) {
-                    MacroRow(label: "Protein", current: data.proteinConsumed, goal: data.proteinGoal, unit: "g", color: proteinBlue)
-                    MacroRow(label: "Carbs", current: data.carbsConsumed, goal: data.carbsGoal, unit: "g", color: carbsOrange)
-                    MacroRow(label: "Fat", current: data.fatConsumed, goal: data.fatGoal, unit: "g", color: fatPurple)
+                    VStack(spacing: 10) {
+                        MacroRow(label: "Protein", current: data.proteinConsumed, goal: data.proteinGoal, unit: "g", color: proteinBlue)
+                        MacroRow(label: "Carbs", current: data.carbsConsumed, goal: data.carbsGoal, unit: "g", color: carbsOrange)
+                        MacroRow(label: "Fat", current: data.fatConsumed, goal: data.fatGoal, unit: "g", color: fatPurple)
+                    }
                 }
             }
 
@@ -354,7 +356,6 @@ struct NoomiBodi_WidgetEntryView: View {
             }
         }
         .padding(14)
-        .widgetURL(quickLogURL)
     }
 
     // MARK: Lock Screen — Circular

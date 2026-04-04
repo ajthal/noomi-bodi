@@ -160,11 +160,14 @@ export default function ReportsScreen(): React.JSX.Element {
   };
 
   const macroAvgPieData = () => {
-    if (summaries.length === 0) return [];
-    const n = summaries.length;
-    const avgP = summaries.reduce((a, s) => a + s.protein, 0) / n;
-    const avgC = summaries.reduce((a, s) => a + s.carbs, 0) / n;
-    const avgF = summaries.reduce((a, s) => a + s.fat, 0) / n;
+    // Exclude today (in-progress) from averages to avoid skewing
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const completeDays = summaries.filter(s => s.date !== todayStr);
+    if (completeDays.length === 0) return [];
+    const n = completeDays.length;
+    const avgP = completeDays.reduce((a, s) => a + s.protein, 0) / n;
+    const avgC = completeDays.reduce((a, s) => a + s.carbs, 0) / n;
+    const avgF = completeDays.reduce((a, s) => a + s.fat, 0) / n;
     const total = avgP + avgC + avgF;
     const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0;
     return [
@@ -212,29 +215,19 @@ export default function ReportsScreen(): React.JSX.Element {
     });
     const weightData = weights.map(w => Math.round(kgToLbs(w.weightKg) * 10) / 10);
     const n = weightData.length;
+
+    // Tight Y-axis: only pad actual data by ±2 lbs for readability
+    const minW = Math.min(...weightData);
+    const maxW = Math.max(...weightData);
+    const yMin = Math.floor(minW - 2);
+    const yMax = Math.ceil(maxW + 2);
+
     const datasets: any[] = [
       { data: weightData, color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`, strokeWidth: 2 },
+      // Invisible points to anchor Y-axis range
+      { data: Array(n).fill(yMin), color: () => 'transparent', strokeWidth: 0, withDots: false },
+      { data: Array(n).fill(yMax), color: () => 'transparent', strokeWidth: 0, withDots: false },
     ];
-
-    const startLbs = weightData[0];
-    datasets.push({
-      data: Array(n).fill(startLbs),
-      color: () => '#5599DD',
-      strokeWidth: 1,
-      strokeDashArray: [6, 4],
-      withDots: false,
-    });
-
-    const goalLbs = goalProj?.goalLbs;
-    if (goalLbs && goalLbs !== startLbs) {
-      datasets.push({
-        data: Array(n).fill(goalLbs),
-        color: () => '#FF9800',
-        strokeWidth: 1,
-        strokeDashArray: [6, 4],
-        withDots: false,
-      });
-    }
 
     return { labels, datasets, legend: undefined };
   };
@@ -408,7 +401,7 @@ export default function ReportsScreen(): React.JSX.Element {
       {pieData.length > 0 ? (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
           <Text style={[s.chartSubtitle, { color: colors.textSecondary }]}>
-            Avg grams per day over {summaries.length} day{summaries.length !== 1 ? 's' : ''}
+            Avg grams per day over {pieData.length > 0 ? summaries.filter(ss => ss.date !== new Date().toISOString().slice(0, 10)).length : summaries.length} completed day{summaries.length !== 1 ? 's' : ''}
           </Text>
           <PieChart
             data={pieData}
@@ -454,12 +447,22 @@ export default function ReportsScreen(): React.JSX.Element {
             style={s.chart}
           />
           <View style={s.weightLegendRow}>
-            <View style={s.legendItem}>
-              <View style={[s.legendDash, { backgroundColor: '#5599DD' }]} />
-              <Text style={[s.legendLabel, { color: colors.textSecondary }]}>
-                Start {wStats?.startLbs} lbs
-              </Text>
-            </View>
+            {wStats && (
+              <View style={s.legendItem}>
+                <View style={[s.legendDash, { backgroundColor: '#5599DD' }]} />
+                <Text style={[s.legendLabel, { color: colors.textSecondary }]}>
+                  Start {wStats.startLbs} lbs
+                </Text>
+              </View>
+            )}
+            {wStats && (
+              <View style={s.legendItem}>
+                <View style={[s.legendDash, { backgroundColor: '#9C27B0' }]} />
+                <Text style={[s.legendLabel, { color: colors.textSecondary }]}>
+                  Current {wStats.currentLbs} lbs
+                </Text>
+              </View>
+            )}
             {goalProj?.goalLbs != null && goalProj.goalLbs !== wStats?.startLbs && (
               <View style={s.legendItem}>
                 <View style={[s.legendDash, { backgroundColor: '#FF9800' }]} />
@@ -485,7 +488,7 @@ export default function ReportsScreen(): React.JSX.Element {
       {/* ── Section 5: Goal Projection ──────────────────────────── */}
       <Text style={[s.sectionTitle, { color: colors.text }]}>Goal Projection</Text>
       {!goalProj || goalProj.status === 'insufficient_data' ? (
-        <EmptyCard colors={colors} icon="rocket-outline" message="Log at least 2 weights to see your goal projection." />
+        <EmptyCard colors={colors} icon="rocket-outline" message="Log at least 5 weights to see a reliable goal projection." />
       ) : (
         <View style={[s.chartCard, { backgroundColor: colors.card }]}>
           <Ionicons

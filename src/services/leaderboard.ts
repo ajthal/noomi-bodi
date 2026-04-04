@@ -88,9 +88,11 @@ async function getUserAdherence(
     dayTotals.set(key, (dayTotals.get(key) ?? 0) + (row.calories || 0));
   }
 
+  const lo = goalCalories * 0.9;
+  const hi = goalCalories * 1.1;
   let daysHit = 0;
   for (const [, total] of dayTotals) {
-    if (total >= goalCalories) daysHit++;
+    if (total >= lo && total <= hi) daysHit++;
   }
 
   return { daysHit, daysTotal: 7 };

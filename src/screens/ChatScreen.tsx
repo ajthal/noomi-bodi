@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Image,
   Animated,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
@@ -22,10 +23,12 @@ import {
   sendMessageToClaude,
   buildChatSystemPrompt,
   parseMealData,
+  parseAllMealData,
   stripMealMarkers,
   parsePlanText,
   stripPlanMarkers,
   parseSaveMealSuggestion,
+  parseAllSaveMealSuggestions,
   stripSaveMealMarkers,
   windowMessages,
   summarizeDroppedMessages,
@@ -99,10 +102,35 @@ function TypingIndicator({ color }: { color: string }) {
   );
 }
 
+// ── Chat image with fallback for stale URIs ──────────────────────────
+
+function ChatImage({ uri }: { uri: string }) {
+  const { colors } = useTheme();
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <View style={[styles.messageImage, { backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }]}>
+        <Ionicons name="image-outline" size={32} color={colors.textTertiary} />
+        <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 4 }}>Photo unavailable</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.messageImage}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 // ── Shared constants ──────────────────────────────────────────────────
 
 const DEFAULT_IMAGE_PROMPT =
-  'What is this meal? Please estimate its nutritional content (calories, protein, carbs, fat).';
+  'Objectively identify this food and estimate its nutritional content (calories, protein, carbs, fat). Do NOT assume it matches any previously logged meals — analyze what you actually see in the image.';
 
 const QUICK_ACTIONS = [
   {
@@ -232,6 +260,23 @@ export default function ChatScreen({
     if (messages.length > 0) saveMessages(messages);
   }, [messages]);
 
+  // Ensure in-flight requests survive app backgrounding: when the user returns
+  // from background while loading, the request may have completed or timed out.
+  // We keep a ref so the async callback can update state even when backgrounded.
+  const isLoadingRef = useRef(false);
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && isLoadingRef.current) {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   // Auto-scroll to newest message.
   useEffect(() => {
     if (messages.length > 0 || isLoading) {
@@ -261,18 +306,31 @@ export default function ChatScreen({
         currentProfile = updatedProfile;
       }
 
-      const mealData = parseMealData(displayText);
+      const mealDataList = parseAllMealData(displayText);
       displayText = stripMealMarkers(displayText);
 
-      const saveSuggestion = parseSaveMealSuggestion(displayText);
+      const saveMealList = parseAllSaveMealSuggestions(displayText);
       displayText = stripSaveMealMarkers(displayText);
+
+      // Backward compat: also set legacy single-item fields
+      const mealData = mealDataList[0] || null;
+      const saveSuggestion = saveMealList[0] || null;
 
       const assistantMsg: Message = {
         text: displayText,
         role: 'assistant',
         timestamp: Date.now(),
         ...(mealData ? { mealData, mealLogged: false } : {}),
+        ...(mealDataList.length > 0 ? {
+          mealDataList,
+          mealLoggedList: mealDataList.map(() => false),
+          mealLogIds: mealDataList.map(() => null),
+        } : {}),
         ...(saveSuggestion ? { saveMealSuggestion: saveSuggestion, mealSaved: false } : {}),
+        ...(saveMealList.length > 0 ? {
+          saveMealList,
+          mealSavedList: saveMealList.map(() => false),
+        } : {}),
       };
 
       return [...currentMessages, assistantMsg];
@@ -358,18 +416,39 @@ export default function ChatScreen({
     return undefined;
   };
 
-  const handleLogMeal = async (msgIndex: number, editedData?: MealData) => {
+  const handleLogMeal = async (msgIndex: number, editedData?: MealData, mealListIndex?: number) => {
     const msg = messages[msgIndex];
-    const mealData = editedData || msg.mealData;
+    const listIdx = mealListIndex ?? 0;
+    const mealData = editedData || msg.mealDataList?.[listIdx] || msg.mealData;
     if (!mealData) return;
 
     const imageMsg = findPrecedingImageMessage(msgIndex);
     const imgUri = imageMsg?.imageUri;
     const imgBase64 = imgUri ? imageBase64Cache.get(imgUri) : undefined;
-    await logMeal(mealData, imgUri, imgBase64);
+    const entry = await logMeal(mealData, imgUri, imgBase64);
 
     const updated = [...messages];
-    updated[msgIndex] = { ...msg, mealData, mealLogged: true };
+    const updatedMsg = { ...msg };
+
+    // Update multi-meal list state
+    if (updatedMsg.mealDataList && updatedMsg.mealLoggedList) {
+      updatedMsg.mealLoggedList = [...updatedMsg.mealLoggedList];
+      updatedMsg.mealLoggedList[listIdx] = true;
+      updatedMsg.mealLogIds = [...(updatedMsg.mealLogIds || updatedMsg.mealDataList.map(() => null))];
+      updatedMsg.mealLogIds[listIdx] = entry.id;
+      if (editedData) {
+        updatedMsg.mealDataList = [...updatedMsg.mealDataList];
+        updatedMsg.mealDataList[listIdx] = editedData;
+      }
+    }
+
+    // Legacy single-item compat
+    if (listIdx === 0) {
+      updatedMsg.mealData = mealData;
+      updatedMsg.mealLogged = true;
+    }
+
+    updated[msgIndex] = updatedMsg;
     setMessages(updated);
     setEditingMeal(null);
     await refreshTotals();
@@ -383,9 +462,10 @@ export default function ChatScreen({
 
   // ── Save to meal library ───────────────────────────────────────────
 
-  const handleSaveMeal = async (msgIndex: number) => {
+  const handleSaveMeal = async (msgIndex: number, saveListIndex?: number) => {
     const msg = messages[msgIndex];
-    const data = msg.saveMealSuggestion;
+    const listIdx = saveListIndex ?? 0;
+    const data = msg.saveMealList?.[listIdx] || msg.saveMealSuggestion;
     if (!data) return;
 
     try {
@@ -397,7 +477,15 @@ export default function ChatScreen({
         fat: data.fat,
       });
       const updated = [...messages];
-      updated[msgIndex] = { ...msg, mealSaved: true };
+      const updatedMsg = { ...msg };
+
+      if (updatedMsg.saveMealList && updatedMsg.mealSavedList) {
+        updatedMsg.mealSavedList = [...updatedMsg.mealSavedList];
+        updatedMsg.mealSavedList[listIdx] = true;
+      }
+      if (listIdx === 0) updatedMsg.mealSaved = true;
+
+      updated[msgIndex] = updatedMsg;
       setMessages(updated);
       Alert.alert('Saved', `"${data.name}" has been added to your meal library.`);
     } catch (e) {
@@ -408,57 +496,107 @@ export default function ChatScreen({
 
   // ── Render helpers ─────────────────────────────────────────────────
 
+  const handleReplaceMeal = async (msgIndex: number, mealListIndex: number) => {
+    const msg = messages[msgIndex];
+    const logId = msg.mealLogIds?.[mealListIndex];
+    const mealData = msg.mealDataList?.[mealListIndex];
+    if (!logId || !mealData) return;
+
+    Alert.alert(
+      'Replace Meal',
+      `Delete the logged entry for "${mealData.name}" and log a corrected version?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Replace',
+          onPress: async () => {
+            try {
+              const { deleteMeal: deleteMealFn } = require('../services/mealLog');
+              await deleteMealFn(logId);
+              const updated = [...messages];
+              const updatedMsg = { ...msg };
+              if (updatedMsg.mealLoggedList) {
+                updatedMsg.mealLoggedList = [...updatedMsg.mealLoggedList];
+                updatedMsg.mealLoggedList[mealListIndex] = false;
+              }
+              if (updatedMsg.mealLogIds) {
+                updatedMsg.mealLogIds = [...updatedMsg.mealLogIds];
+                updatedMsg.mealLogIds[mealListIndex] = null;
+              }
+              if (mealListIndex === 0) updatedMsg.mealLogged = false;
+              updated[msgIndex] = updatedMsg;
+              setMessages(updated);
+              await refreshTotals();
+              onMealLogged?.();
+              setEditingMeal({ index: msgIndex, data: mealData, listIndex: mealListIndex } as any);
+            } catch (e) {
+              Alert.alert('Error', getUserFriendlyError(e));
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const renderMealActions = (msg: Message, index: number) => {
     if (msg.role !== 'assistant') return null;
 
-    const hasMealData = !!msg.mealData;
-    const hasSaveSuggestion = !!msg.saveMealSuggestion;
-    if (!hasMealData && !hasSaveSuggestion) return null;
+    const mealList = msg.mealDataList ?? (msg.mealData ? [msg.mealData] : []);
+    const loggedList = msg.mealLoggedList ?? (msg.mealLogged != null ? [msg.mealLogged] : []);
+    const saveList = msg.saveMealList ?? (msg.saveMealSuggestion ? [msg.saveMealSuggestion] : []);
+    const savedList = msg.mealSavedList ?? (msg.mealSaved != null ? [msg.mealSaved] : []);
+
+    if (mealList.length === 0 && saveList.length === 0) return null;
 
     return (
       <View style={styles.mealActions}>
-        {hasMealData && (
-          <>
+        {mealList.map((meal, mi) => (
+          <View key={`meal-${mi}`}>
             <Text style={[styles.mealSummary, { color: colors.textSecondary }]}>
-              {msg.mealData!.calories} cal · {msg.mealData!.protein}g P · {msg.mealData!.carbs}g C · {msg.mealData!.fat}g F
+              {meal.name}: {meal.calories} cal · {meal.protein}g P · {meal.carbs}g C · {meal.fat}g F
             </Text>
-            {msg.mealLogged ? (
-              <View style={styles.mealLoggedBadge}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
-                <Text style={styles.mealLoggedText}>Logged</Text>
+            {loggedList[mi] ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.mealLoggedBadge}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                  <Text style={styles.mealLoggedText}>Logged</Text>
+                </View>
+                <TouchableOpacity onPress={() => handleReplaceMeal(index, mi)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={{ fontSize: 12, color: colors.accent, fontWeight: '600' }}>Replace</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.mealActionButtons}>
-                <TouchableOpacity style={styles.logMealButton} onPress={() => handleLogMeal(index)}>
+                <TouchableOpacity style={styles.logMealButton} onPress={() => handleLogMeal(index, undefined, mi)}>
                   <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
                   <Text style={styles.logMealButtonText}>Log Meal</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.editMealButton}
-                  onPress={() => setEditingMeal({ index, data: msg.mealData! })}
+                  onPress={() => setEditingMeal({ index, data: meal, listIndex: mi } as any)}
                 >
                   <Ionicons name="pencil-outline" size={16} color={colors.accent} />
                   <Text style={styles.editMealButtonText}>Edit & Log</Text>
                 </TouchableOpacity>
               </View>
             )}
-          </>
-        )}
-        {hasSaveSuggestion && (
-          <View style={styles.saveMealRow}>
-            {msg.mealSaved ? (
+          </View>
+        ))}
+        {saveList.map((saveMeal, si) => (
+          <View key={`save-${si}`} style={styles.saveMealRow}>
+            {savedList[si] ? (
               <View style={styles.mealLoggedBadge}>
                 <Ionicons name="bookmark" size={14} color="#FF9800" />
                 <Text style={[styles.mealLoggedText, { color: '#FF9800' }]}>Saved to library</Text>
               </View>
             ) : (
-              <TouchableOpacity style={styles.saveMealButton} onPress={() => handleSaveMeal(index)}>
+              <TouchableOpacity style={styles.saveMealButton} onPress={() => handleSaveMeal(index, si)}>
                 <Ionicons name="bookmark-outline" size={16} color="#FF9800" />
-                <Text style={styles.saveMealButtonText}>Save to Meals</Text>
+                <Text style={styles.saveMealButtonText}>Save "{saveMeal.name}"</Text>
               </TouchableOpacity>
             )}
           </View>
-        )}
+        ))}
       </View>
     );
   };
@@ -543,7 +681,7 @@ export default function ChatScreen({
                 <Text style={[styles.role, { color: colors.textSecondary }]}>You</Text>
               )}
               {msg.imageUri && (
-                <Image source={{ uri: msg.imageUri }} style={styles.messageImage} resizeMode="cover" />
+                <ChatImage uri={msg.imageUri} />
               )}
               {msg.role === 'assistant' ? (
                 <ThemedMarkdown>{msg.text}</ThemedMarkdown>
@@ -606,7 +744,7 @@ export default function ChatScreen({
         <EditMealModal
           visible={!!editingMeal}
           initialData={editingMeal.data}
-          onSave={(edited) => handleLogMeal(editingMeal.index, edited)}
+          onSave={(edited) => handleLogMeal(editingMeal.index, edited, (editingMeal as any).listIndex)}
           onCancel={() => setEditingMeal(null)}
         />
       )}

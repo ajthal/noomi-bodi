@@ -14,6 +14,7 @@ import {
   Insight,
   InsightType,
   generateInsights,
+  loadAllCachedInsights,
   dismissInsight,
 } from '../services/insightGenerator';
 import { useTheme } from '../contexts/ThemeContext';
@@ -42,6 +43,7 @@ export default function InsightsPage(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [cacheExpired, setCacheExpired] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async (isRefresh = false) => {
@@ -52,8 +54,17 @@ export default function InsightsPage(): React.JSX.Element {
     }
     setLoadError(null);
     try {
-      const result = await generateInsights(isRefresh);
-      setInsights(result.filter(i => !i.isDismissed));
+      if (isRefresh) {
+        // Only call Claude on explicit refresh
+        const result = await generateInsights(true);
+        setInsights(result.filter(i => !i.isDismissed));
+        setCacheExpired(false);
+      } else {
+        // On page load, only show cached insights (never auto-generate)
+        const { insights: cached, expired } = await loadAllCachedInsights();
+        setInsights(cached.filter(i => !i.isDismissed));
+        setCacheExpired(expired);
+      }
     } catch (e) {
       setLoadError(getUserFriendlyError(e));
     } finally {
@@ -141,9 +152,29 @@ export default function InsightsPage(): React.JSX.Element {
             <Ionicons name="sparkles-outline" size={36} color={colors.textTertiary} />
             <Text style={[s.emptyTitle, { color: colors.text }]}>No insights yet</Text>
             <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>
-              Tap Refresh to generate AI insights based on your data, or keep logging meals to give the AI more to work with.
+              Tap below to generate AI insights based on your data, or keep logging meals to give the AI more to work with.
             </Text>
+            <TouchableOpacity
+              style={[s.generateBtn]}
+              onPress={forceFetch}
+            >
+              <Ionicons name="sparkles" size={16} color="#fff" />
+              <Text style={s.generateBtnText}>Generate Insights</Text>
+            </TouchableOpacity>
           </View>
+        )}
+
+        {cacheExpired && insights.length > 0 && !refreshing && (
+          <TouchableOpacity
+            style={[s.expiredBanner, { backgroundColor: isDark ? '#2a2a1b' : '#FFF8E1', borderColor: '#FF980044' }]}
+            onPress={forceFetch}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="refresh-outline" size={16} color="#FF9800" />
+            <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary }}>
+              These insights are outdated. Tap to generate fresh ones.
+            </Text>
+          </TouchableOpacity>
         )}
 
         {insights.map(insight => {
@@ -274,6 +305,26 @@ const s = StyleSheet.create({
   },
   emptyTitle: { fontSize: 17, fontWeight: '600', marginTop: 10 },
   emptySubtitle: { fontSize: 14, textAlign: 'center', marginTop: 6, lineHeight: 20 },
+  generateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 14,
+  },
+  generateBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  expiredBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 12,
+  },
 
   // Generating state
   generatingCard: {

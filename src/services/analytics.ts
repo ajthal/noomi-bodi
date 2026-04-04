@@ -83,7 +83,7 @@ export async function predictGoalDate(): Promise<GoalProjection | null> {
   const currentLbs = Math.round(kgToLbs(currentKg) * 10) / 10;
   const goalLbs = targetKg ? Math.round(kgToLbs(targetKg) * 10) / 10 : null;
 
-  if (weightLogs.length < 2) {
+  if (weightLogs.length < 5) {
     return {
       currentLbs,
       goalLbs: goalLbs ?? currentLbs,
@@ -101,7 +101,10 @@ export async function predictGoalDate(): Promise<GoalProjection | null> {
   const ys = weightLogs.map(w => kgToLbs(w.weightKg));
 
   const { slope: dailyRate, r2 } = linearRegression(xs, ys);
-  const weeklyRateLbs = Math.round(dailyRate * 7 * 10) / 10;
+  // Clamp to physiologically reasonable range: max ~2 lbs/week loss or ~1.5 lbs/week gain
+  const rawWeekly = dailyRate * 7;
+  const clampedWeekly = Math.max(-2, Math.min(1.5, rawWeekly));
+  const weeklyRateLbs = Math.round(clampedWeekly * 10) / 10;
 
   const latestLbs = ys[ys.length - 1];
   const confidence: GoalProjection['confidence'] =

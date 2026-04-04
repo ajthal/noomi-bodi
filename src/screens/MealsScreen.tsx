@@ -228,6 +228,7 @@ export default function MealsScreen(): React.JSX.Element {
                 protein: meal.protein,
                 carbs: meal.carbs,
                 fat: meal.fat,
+                imageUrl: meal.imageUrl || undefined,
               });
               const userId = (await supabase.auth.getUser()).data.user?.id;
               if (userId) await syncWidgetData(userId);

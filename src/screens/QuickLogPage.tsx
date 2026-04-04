@@ -13,6 +13,7 @@ import {
   TextInput,
   Pressable,
   RefreshControl,
+  Keyboard,
   useWindowDimensions,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
@@ -167,6 +168,13 @@ export default function QuickLogPage({
 
   useDayChange(refresh);
 
+  // Safety net: force-clear analyzing state if stuck for >60s
+  useEffect(() => {
+    if (!analyzing) return;
+    const timer = setTimeout(() => setAnalyzing(false), 60_000);
+    return () => clearTimeout(timer);
+  }, [analyzing]);
+
   // ── Image handling ────────────────────────────────────────────────
 
   const handleImageResult = useCallback(async (response: ImagePickerResponse) => {
@@ -242,9 +250,10 @@ export default function QuickLogPage({
   }, [apiKey, handleImageResult]);
 
   useDeepLink(useCallback((action) => {
-    if ((action === 'quick-log' || action === 'add-photo') && apiKey) {
+    if (action === 'add-photo' && apiKey) {
       launchCamera(IMAGE_PICKER_OPTIONS, handleImageResult);
     }
+    // 'quick-log' just navigates to Home (no camera) — already on this screen
   }, [apiKey, handleImageResult]));
 
   // ── Meal logging ──────────────────────────────────────────────────
@@ -311,6 +320,7 @@ export default function QuickLogPage({
   // ── Weight logging ────────────────────────────────────────────────
 
   const handleLogWeight = async () => {
+    Keyboard.dismiss();
     const val = parseFloat(weightInput);
     if (isNaN(val) || val <= 0) {
       Alert.alert('Invalid weight', 'Please enter a valid number.');
@@ -449,6 +459,9 @@ export default function QuickLogPage({
               keyboardType="decimal-pad"
               value={weightInput}
               onChangeText={setWeightInput}
+              blurOnSubmit
+              onSubmitEditing={handleLogWeight}
+              returnKeyType="done"
             />
             <Pressable
               style={[s.weightBtn, loggingWeight && { opacity: 0.5 }]}
@@ -594,26 +607,18 @@ export default function QuickLogPage({
         </View>
       </ScrollView>
 
-      <View style={[s.stickyButtonWrap, { backgroundColor: colors.background }]}>
-        <TouchableOpacity
-          style={[s.addButton, (analyzing || !apiKey) && s.addButtonDisabled]}
-          onPress={handleAddPhoto}
-          disabled={analyzing || !apiKey}
-          activeOpacity={0.7}
-        >
-          {analyzing ? (
-            <>
-              <ActivityIndicator size="small" color="#fff" />
-              <Text style={s.addButtonText}>Analyzing meal...</Text>
-            </>
-          ) : (
-            <>
-              <Ionicons name="camera-outline" size={22} color="#fff" />
-              <Text style={s.addButtonText}>Add Meal Photo</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={[s.fab, (analyzing || !apiKey) && s.fabDisabled]}
+        onPress={handleAddPhoto}
+        disabled={analyzing || !apiKey}
+        activeOpacity={0.7}
+      >
+        {analyzing ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Ionicons name="camera" size={24} color="#fff" />
+        )}
+      </TouchableOpacity>
 
       {pendingResult && (
         <EditMealModal
@@ -658,7 +663,7 @@ const s = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 90,
   },
 
   // Header
@@ -686,28 +691,25 @@ const s = StyleSheet.create({
     paddingBottom: 10,
   },
 
-  // Sticky add button
-  stickyButtonWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-  },
-  addButton: {
-    flexDirection: 'row',
+  // Floating action button
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#7C3AED',
-    borderRadius: 14,
-    paddingVertical: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  addButtonDisabled: {
+  fabDisabled: {
     opacity: 0.5,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
   },
   hintText: {
     textAlign: 'center',

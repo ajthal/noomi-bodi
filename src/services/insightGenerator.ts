@@ -121,7 +121,11 @@ Rules:
 - If there's very little data (< 3 days), say so in one insight and give encouragement.
 - Be specific: include actual numbers, percentages, and comparisons to goals.
 - Keep titles punchy and motivating.
-- Sort by priority descending in your response.`;
+- Sort by priority descending in your response.
+- Focus on MULTI-DAY and MULTI-WEEK patterns, trends, and correlations.
+- Do NOT comment on today's incomplete data or whether the user has hit their goals yet today.
+- Do NOT generate day-by-day findings like "you haven't reached your calories goal yet" when the day is still in progress.
+- Minimum data window for meaningful insights: 3+ completed days.`;
 
 async function callClaudeForInsights(dataContext: string, apiKey: string): Promise<Insight[]> {
   const response = await axios.post(
@@ -224,6 +228,28 @@ export async function loadCachedInsights(): Promise<Insight[]> {
 
   if (error || !rows) return [];
   return rows.map(rowToInsight);
+}
+
+/** Load cached insights even if expired (for display without regeneration). */
+export async function loadAllCachedInsights(): Promise<{ insights: Insight[]; expired: boolean }> {
+  const userId = await getUserId();
+  if (!userId) return { insights: [], expired: true };
+
+  // First try non-expired
+  const fresh = await loadCachedInsights();
+  if (fresh.length > 0) return { insights: fresh, expired: false };
+
+  // Fall back to any non-dismissed insights (even expired)
+  const { data: rows, error } = await supabase
+    .from('user_insights')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_dismissed', false)
+    .order('priority', { ascending: false })
+    .limit(10);
+
+  if (error || !rows || rows.length === 0) return { insights: [], expired: true };
+  return { insights: rows.map(rowToInsight), expired: true };
 }
 
 export async function dismissInsight(id: string): Promise<void> {

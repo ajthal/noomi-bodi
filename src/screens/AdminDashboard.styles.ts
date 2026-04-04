@@ -252,6 +252,33 @@ export default StyleSheet.create({
     fontWeight: '600',
   },
 
+  // ── Pie chart custom legend ──────────────────────────────────────────
+  pieLegend: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  pieLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  pieLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+  },
+  pieLegendLabel: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  pieLegendCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+
   // ── Horizontal bar card (shared by monthly + tool cost) ────────────
   costCard: {
     borderRadius: 12,
