@@ -71,6 +71,12 @@ export default function SharedMealsPage({ onUnreadCountChange }: SharedMealsPage
 
   const { fetchIfStale, forceFetch } = useStaleFetch(refresh, 30_000);
 
+  // Fetch on mount so data is ready before user navigates here
+  React.useEffect(() => {
+    fetchIfStale();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   React.useEffect(() => {
     if (isFocused) fetchIfStale();
   }, [isFocused, fetchIfStale]);

@@ -5,7 +5,6 @@ import {
   Text,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   Alert,
   TouchableOpacity,
   Image,
@@ -21,7 +20,9 @@ import { styles } from './ChatScreen.styles';
 import EditMealModal from '../components/EditMealModal';
 import {
   sendMessageToClaude,
-  buildChatSystemPrompt,
+  buildStaticSystemPrompt,
+  buildDynamicContext,
+  buildSystemBlocks,
   parseMealData,
   parseAllMealData,
   stripMealMarkers,
@@ -35,19 +36,14 @@ import {
   type ChatMessage,
 } from '../services/claude';
 import {
-  saveMessages,
-  loadMessages,
   Message,
   MealData,
-  getApiKey,
-  loadUserProfile,
   saveUserPlan,
   estimateDailyGoals,
   parseMacrosFromPlanText,
   UserProfile,
-  saveConversationSummary,
-  loadConversationSummary,
 } from '../services/storage';
+import { useChatContext } from '../contexts/ChatContext';
 import { logMeal, getDailyTotals, getTodaysMeals } from '../services/mealLog';
 import { saveMeal } from '../services/savedMeals';
 import { syncWidgetData } from '../services/widgetDataSync';
@@ -163,34 +159,7 @@ const QUICK_ACTIONS = [
   },
 ];
 
-// ── Custom hook: load initial chat state once on mount ─────────────────
-
-function useChatState() {
-  const [ready, setReady] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [apiKey, setApiKey] = useState<string | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [conversationSummary, setConversationSummary] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([loadMessages(), getApiKey(), loadUserProfile(), loadConversationSummary()]).then(
-      ([savedMessages, storedKey, storedProfile, storedSummary]) => {
-        if (cancelled) return;
-        setMessages(savedMessages);
-        setApiKey(storedKey);
-        setProfile(storedProfile);
-        setConversationSummary(storedSummary);
-        setReady(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile, conversationSummary, setConversationSummary };
-}
+// useChatState replaced by ChatContext — see src/contexts/ChatContext.tsx
 
 // ── Props ─────────────────────────────────────────────────────────────
 
@@ -217,8 +186,17 @@ export default function ChatScreen({
     index: number;
     data: MealData;
   } | null>(null);
-  const { ready, messages, setMessages, apiKey, setApiKey, profile, setProfile, conversationSummary, setConversationSummary } =
-    useChatState();
+  const {
+    isReady: ready,
+    messages,
+    setMessages,
+    apiKey,
+    profile,
+    setProfile,
+    conversationSummary,
+    persistSummary,
+    refreshProfileAndKey,
+  } = useChatContext();
   const scrollViewRef = useRef<ScrollView>(null);
 
   const isFocused = useIsFocused();
@@ -227,18 +205,15 @@ export default function ChatScreen({
     await getDailyTotals();
   }, []);
 
-  // Re-fetch profile/key when the tab becomes visible.
+  // Re-fetch profile/key when the screen becomes visible.
   useEffect(() => {
     if (!isFocused) return;
-    Promise.all([getApiKey(), loadUserProfile()]).then(([key, p]) => {
-      setApiKey(key);
-      setProfile(p);
-    });
+    refreshProfileAndKey();
     (async () => {
       const userId = (await supabase.auth.getUser()).data.user?.id;
       if (userId) syncWidgetData(userId);
     })();
-  }, [isFocused]);
+  }, [isFocused, refreshProfileAndKey]);
 
   // Sync on external refresh trigger (e.g. meal logged on QuickLogPage).
   useEffect(() => {
@@ -249,16 +224,10 @@ export default function ChatScreen({
 
   // Re-fetch context when the day rolls over at midnight or on app resume.
   useDayChange(useCallback(() => {
-    Promise.all([getApiKey(), loadUserProfile()]).then(([key, p]) => {
-      setApiKey(key);
-      setProfile(p);
-    });
-  }, [setApiKey, setProfile]));
+    refreshProfileAndKey();
+  }, [refreshProfileAndKey]));
 
-  // Persist messages on every change.
-  useEffect(() => {
-    if (messages.length > 0) saveMessages(messages);
-  }, [messages]);
+  // Message persistence is handled by ChatContext — no need for a local effect.
 
   // Ensure in-flight requests survive app backgrounding: when the user returns
   // from background while loading, the request may have completed or timed out.
@@ -363,7 +332,9 @@ export default function ChatScreen({
         getDailyTotals(),
       ]);
 
-      let systemPrompt = buildChatSystemPrompt(profile, { meals: todayMeals, totals: todayTotals });
+      // Build split system prompt for prompt caching
+      const staticPrompt = buildStaticSystemPrompt();
+      let dynamicContext = buildDynamicContext(profile, { meals: todayMeals, totals: todayTotals });
 
       const allApiMessages: ChatMessage[] = newMessages.map((msg, i) => {
         if (i === newMessages.length - 1 && image) {
@@ -377,22 +348,24 @@ export default function ChatScreen({
         return { role: msg.role as 'user' | 'assistant', content: msg.text };
       });
 
-      const systemTokens = Math.ceil(systemPrompt.length / 4);
+      const systemTokens = Math.ceil((staticPrompt.length + dynamicContext.length) / 4);
       const { kept, dropped } = windowMessages(allApiMessages, systemTokens);
 
       if (dropped.length > 0 && apiKey) {
         const newSummary = await summarizeDroppedMessages(dropped, conversationSummary, apiKey);
-        setConversationSummary(newSummary);
-        saveConversationSummary(newSummary);
-        systemPrompt += `\n\n**Summary of earlier conversation**\n${newSummary}`;
+        persistSummary(newSummary);
+        dynamicContext += `\n\n**Summary of earlier conversation**\n${newSummary}`;
       } else if (conversationSummary) {
-        systemPrompt += `\n\n**Summary of earlier conversation**\n${conversationSummary}`;
+        dynamicContext += `\n\n**Summary of earlier conversation**\n${conversationSummary}`;
       }
+
+      const systemBlocks = buildSystemBlocks(staticPrompt, dynamicContext);
 
       const rawResponse = await sendMessageToClaude(
         kept,
         apiKey,
-        systemPrompt,
+        null, // legacy systemPrompt param — not used when systemBlocks is provided
+        systemBlocks,
       );
       setMessages(await processResponse(rawResponse, newMessages));
     } catch (error) {

@@ -250,6 +250,57 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
+// ── Dynamic tool selection ──────────────────────────────────────────
+
+type ToolIntent = 'meal_log' | 'data_query' | 'meal_suggestion' | 'general';
+
+/** Core tools always included regardless of intent. */
+const CORE_TOOL_NAMES = new Set(['get_remaining_macros']);
+
+/** Tools for data/history queries. */
+const DATA_QUERY_TOOL_NAMES = new Set([
+  'get_daily_totals',
+  'get_meals_by_date_range',
+  'get_period_summary',
+  'calculate_adherence_rate',
+  'get_weight_trend',
+  'get_analytics',
+  'get_frequent_meals',
+  'search_meals_by_macro',
+  'get_best_adherence_days',
+  'get_meal_history',
+  'search_saved_meals',
+]);
+
+/** Tools for meal suggestions/planning. */
+const SUGGESTION_TOOL_NAMES = new Set([
+  'get_remaining_macros',
+  'get_frequent_meals',
+  'search_saved_meals',
+]);
+
+/**
+ * Return a filtered tool array based on the classified intent.
+ * Reduces token overhead for simple interactions like meal logging.
+ */
+export function getToolsForIntent(intent: ToolIntent): ToolDefinition[] {
+  switch (intent) {
+    case 'meal_log':
+      // Meal logging rarely needs tools — just core
+      return TOOL_DEFINITIONS.filter(t => CORE_TOOL_NAMES.has(t.name));
+    case 'data_query':
+      // Full data toolset
+      return TOOL_DEFINITIONS.filter(t => DATA_QUERY_TOOL_NAMES.has(t.name) || CORE_TOOL_NAMES.has(t.name));
+    case 'meal_suggestion':
+      // Suggestion-relevant tools
+      return TOOL_DEFINITIONS.filter(t => SUGGESTION_TOOL_NAMES.has(t.name));
+    case 'general':
+    default:
+      // Unknown intent — include everything
+      return [...TOOL_DEFINITIONS];
+  }
+}
+
 // ── Tool Implementations ────────────────────────────────────────────
 
 async function getDailyTotals(input: { date: string }): Promise<string> {

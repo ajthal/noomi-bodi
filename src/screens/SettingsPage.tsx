@@ -75,6 +75,7 @@ export default function SettingsPage(): React.JSX.Element {
           headers: {
             'x-api-key': key,
             'anthropic-version': '2023-06-01',
+            'anthropic-beta': 'prompt-caching-2024-07-31',
             'Content-Type': 'application/json',
           },
           timeout: 15000,

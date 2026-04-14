@@ -140,6 +140,7 @@ async function callClaudeForInsights(dataContext: string, apiKey: string): Promi
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'prompt-caching-2024-07-31',
         'Content-Type': 'application/json',
       },
     },

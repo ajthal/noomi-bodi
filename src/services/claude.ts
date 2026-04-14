@@ -2,7 +2,7 @@ import axios from 'axios';
 import { withRetry } from '../utils/retry';
 import { MealData, UserProfile, estimateDailyGoals } from './storage';
 import { cmToFeetInchesStr, kgToLbs } from '../utils/units';
-import { TOOL_DEFINITIONS, executeTool } from './claudeTools';
+import { TOOL_DEFINITIONS, getToolsForIntent, type ToolDefinition, executeTool } from './claudeTools';
 import { supabase } from './supabase';
 import type { MealEntry, DailyMacroTotals } from './mealLog';
 
@@ -75,11 +75,22 @@ export const SAVE_MEAL_END = '[/SAVE_MEAL]';
 
 const INPUT_COST_PER_MILLION = 3; // $3 per million input tokens
 const OUTPUT_COST_PER_MILLION = 15; // $15 per million output tokens
+const CACHE_READ_COST_PER_MILLION = 0.3; // $0.30 per million cached read tokens
+const CACHE_WRITE_COST_PER_MILLION = 3.75; // $3.75 per million cache write tokens
 
-function estimateCost(inputTokens: number, outputTokens: number): number {
+function estimateCost(
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number = 0,
+  cacheCreationTokens: number = 0,
+): number {
+  // Cache-read tokens are NOT counted in input_tokens by the API,
+  // so we cost them separately at the discounted rate.
   return (
     (inputTokens / 1_000_000) * INPUT_COST_PER_MILLION +
-    (outputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION
+    (outputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION +
+    (cacheReadTokens / 1_000_000) * CACHE_READ_COST_PER_MILLION +
+    (cacheCreationTokens / 1_000_000) * CACHE_WRITE_COST_PER_MILLION
   );
 }
 
@@ -87,6 +98,8 @@ async function logAiUsage(params: {
   model: string;
   tokensInput: number;
   tokensOutput: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
   latencyMs: number;
   success: boolean;
   errorMessage?: string | null;
@@ -96,8 +109,14 @@ async function logAiUsage(params: {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const totalTokens = params.tokensInput + params.tokensOutput;
-    const cost = estimateCost(params.tokensInput, params.tokensOutput);
+    const cacheRead = params.cacheReadTokens ?? 0;
+    const cacheCreation = params.cacheCreationTokens ?? 0;
+    const totalTokens = params.tokensInput + params.tokensOutput + cacheRead;
+    const cost = estimateCost(params.tokensInput, params.tokensOutput, cacheRead, cacheCreation);
+
+    if (cacheRead > 0 || cacheCreation > 0) {
+      console.log(`[AI Cache] read=${cacheRead} creation=${cacheCreation} input=${params.tokensInput} output=${params.tokensOutput}`);
+    }
 
     await supabase.from('ai_usage_logs').insert({
       user_id: user.id,
@@ -185,13 +204,12 @@ export async function summarizeDroppedMessages(
         model: CLAUDE_MODEL,
         max_tokens: 512,
         messages: [{ role: 'user', content: prompt }],
-        system: 'You are a summarization assistant. Produce only the summary, nothing else.',
+        system: [{ type: 'text', text: 'You are a summarization assistant. Produce only the summary, nothing else.', cache_control: { type: 'ephemeral' } }],
       },
       {
         headers: {
           'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Type': 'application/json',
+          ...ANTHROPIC_HEADERS,
         },
         timeout: 30000,
       },
@@ -208,15 +226,70 @@ export async function summarizeDroppedMessages(
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const API_URL = 'https://api.anthropic.com/v1/messages';
 
-const MAX_TOOL_ROUNDS = 5;
+const MAX_TOOL_ROUNDS = 3;
+
+// ── Prompt caching headers ──────────────────────────────────────────
+
+const ANTHROPIC_HEADERS = {
+  'anthropic-version': '2023-06-01',
+  'anthropic-beta': 'prompt-caching-2024-07-31',
+  'Content-Type': 'application/json',
+};
+
+// ── Intent classification for dynamic tool selection ─────────────────
+
+export type ToolIntent = 'meal_log' | 'data_query' | 'meal_suggestion' | 'general';
+
+const MEAL_LOG_PATTERNS = /\b(i\s+(had|ate|just ate|just had|grabbed|made|cooked|prepared|drank|got)|for\s+(breakfast|lunch|dinner|snack)|here'?s\s+what\s+i|log\s+(this|that|my|a)|eating|ordered)\b/i;
+const DATA_QUERY_PATTERNS = /\b(how\s+much|how\s+many|this\s+week|last\s+week|this\s+month|today'?s?\s+(total|intake|calories)|yesterday|progress|trend|weight|adherence|average|summary|total|history|stats|all\s+time|ever)\b/i;
+const SUGGESTION_PATTERNS = /\b(what\s+should\s+i\s+eat|suggest|recommend|meal\s+plan|recipe|what\s+can\s+i|idea|option|remaining|still\s+need|left\s+to\s+eat)\b/i;
+
+export function classifyIntent(message: string, hasImage: boolean): ToolIntent {
+  if (hasImage) return 'meal_log';
+  if (MEAL_LOG_PATTERNS.test(message)) return 'meal_log';
+  if (DATA_QUERY_PATTERNS.test(message)) return 'data_query';
+  if (SUGGESTION_PATTERNS.test(message)) return 'meal_suggestion';
+  return 'general';
+}
+
+/** Add cache_control to the last tool so all tool definitions are cached together. */
+function addCacheControlToTools(tools: ToolDefinition[]): (ToolDefinition & { cache_control?: { type: string } })[] {
+  if (tools.length === 0) return tools;
+  return tools.map((t, i) =>
+    i === tools.length - 1
+      ? { ...t, cache_control: { type: 'ephemeral' } }
+      : t,
+  );
+}
+
+/** Build system prompt blocks with cache_control for prompt caching.
+ *  The static portion (instructions) is cached; the dynamic portion (user data) is not. */
+export function buildSystemBlocks(
+  staticPrompt: string,
+  dynamicContext: string,
+): { type: 'text'; text: string; cache_control?: { type: string } }[] {
+  const blocks: { type: 'text'; text: string; cache_control?: { type: string } }[] = [];
+  if (staticPrompt.trim()) {
+    blocks.push({ type: 'text', text: staticPrompt.trim(), cache_control: { type: 'ephemeral' } });
+  }
+  if (dynamicContext.trim()) {
+    blocks.push({ type: 'text', text: dynamicContext.trim() });
+  }
+  return blocks;
+}
 
 /** Send a chat-style request to the Anthropic Messages API and return the text response.
  *  Handles tool_use responses automatically by executing the requested function and
- *  continuing the conversation until Claude produces a final text response. */
+ *  continuing the conversation until Claude produces a final text response.
+ *
+ *  Uses prompt caching to reduce rate limit impact — cached tokens are excluded from
+ *  Anthropic's input token rate limit. */
 export async function sendMessageToClaude(
   messages: ChatMessage[],
   apiKey?: string | null,
   systemPrompt?: string | null,
+  /** Pass separate static/dynamic system prompt blocks for prompt caching. */
+  systemBlocks?: { type: 'text'; text: string; cache_control?: { type: string } }[] | null,
 ): Promise<string> {
   if (!apiKey) {
     throw new Error(
@@ -234,7 +307,16 @@ export async function sendMessageToClaude(
   const hasImage = messages.some(m => m.imageBase64);
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  let totalCacheReadTokens = 0;
+  let totalCacheCreationTokens = 0;
   const allToolsUsed: string[] = [];
+
+  // Classify intent from the last user message for dynamic tool selection
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+  const intent = classifyIntent(lastUserMsg?.content ?? '', hasImage);
+  const selectedTools = addCacheControlToTools(getToolsForIntent(intent));
+
+  console.log(`[AI Intent] "${intent}" → ${selectedTools.length} tools (was ${TOOL_DEFINITIONS.length})`);
 
   const apiMessages: ApiMessage[] = messages.map(msg => {
     if (msg.imageBase64 && msg.imageMimeType) {
@@ -256,8 +338,7 @@ export async function sendMessageToClaude(
 
   const headers = {
     'x-api-key': apiKey,
-    'anthropic-version': '2023-06-01',
-    'Content-Type': 'application/json',
+    ...ANTHROPIC_HEADERS,
   };
 
   const axiosOpts = { headers, maxContentLength: Infinity, maxBodyLength: Infinity, timeout: 60000 };
@@ -268,10 +349,15 @@ export async function sendMessageToClaude(
         model: CLAUDE_MODEL,
         max_tokens: hasImage ? 4096 : 2048,
         messages: apiMessages,
-        tools: TOOL_DEFINITIONS,
+        tools: selectedTools,
       };
-      if (systemPrompt?.trim()) {
-        body.system = systemPrompt.trim();
+
+      // Use block-format system prompt for caching when available
+      if (systemBlocks && systemBlocks.length > 0) {
+        body.system = systemBlocks;
+      } else if (systemPrompt?.trim()) {
+        // Fallback: wrap plain string in a cacheable block
+        body.system = [{ type: 'text', text: systemPrompt.trim(), cache_control: { type: 'ephemeral' } }];
       }
 
       const response = await withRetry(() => axios.post(API_URL, body, axiosOpts));
@@ -280,6 +366,8 @@ export async function sendMessageToClaude(
       if (usage) {
         totalInputTokens += usage.input_tokens ?? 0;
         totalOutputTokens += usage.output_tokens ?? 0;
+        totalCacheReadTokens += usage.cache_read_input_tokens ?? 0;
+        totalCacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
       }
 
       if (stop_reason !== 'tool_use') {
@@ -292,12 +380,35 @@ export async function sendMessageToClaude(
           model: CLAUDE_MODEL,
           tokensInput: totalInputTokens,
           tokensOutput: totalOutputTokens,
+          cacheReadTokens: totalCacheReadTokens,
+          cacheCreationTokens: totalCacheCreationTokens,
           latencyMs: Date.now() - startTime,
           success: true,
           toolsUsed: allToolsUsed,
         });
 
         return result;
+      }
+
+      // Token budget check between tool rounds to prevent runaway consumption
+      if (totalInputTokens > 20_000) {
+        console.warn(`[AI] Token budget exceeded after round ${round} (${totalInputTokens} input tokens). Forcing text response.`);
+        const textParts = (content as ContentBlock[])
+          .filter((b): b is TextBlock => b.type === 'text')
+          .map(b => b.text);
+        if (textParts.length > 0) {
+          logAiUsage({
+            model: CLAUDE_MODEL,
+            tokensInput: totalInputTokens,
+            tokensOutput: totalOutputTokens,
+            cacheReadTokens: totalCacheReadTokens,
+            cacheCreationTokens: totalCacheCreationTokens,
+            latencyMs: Date.now() - startTime,
+            success: true,
+            toolsUsed: allToolsUsed,
+          });
+          return textParts.join('\n');
+        }
       }
 
       const toolUseBlocks = (content as ContentBlock[]).filter(
@@ -314,6 +425,8 @@ export async function sendMessageToClaude(
           model: CLAUDE_MODEL,
           tokensInput: totalInputTokens,
           tokensOutput: totalOutputTokens,
+          cacheReadTokens: totalCacheReadTokens,
+          cacheCreationTokens: totalCacheCreationTokens,
           latencyMs: Date.now() - startTime,
           success: true,
           toolsUsed: allToolsUsed,
@@ -353,6 +466,8 @@ export async function sendMessageToClaude(
         model: CLAUDE_MODEL,
         tokensInput: totalInputTokens,
         tokensOutput: totalOutputTokens,
+        cacheReadTokens: totalCacheReadTokens,
+        cacheCreationTokens: totalCacheCreationTokens,
         latencyMs: Date.now() - startTime,
         success: false,
         errorMessage: errorMsg,
@@ -367,6 +482,8 @@ export async function sendMessageToClaude(
     model: CLAUDE_MODEL,
     tokensInput: totalInputTokens,
     tokensOutput: totalOutputTokens,
+    cacheReadTokens: totalCacheReadTokens,
+    cacheCreationTokens: totalCacheCreationTokens,
     latencyMs: Date.now() - startTime,
     success: true,
     toolsUsed: allToolsUsed,
@@ -535,8 +652,76 @@ export interface DailyContext {
   totals: DailyMacroTotals;
 }
 
-/** Build a context-aware system prompt for the chat screen. */
-export function buildChatSystemPrompt(
+/** Build the STATIC portion of the system prompt — instructions that rarely change.
+ *  This part is cached via Anthropic's prompt caching to avoid counting against rate limits. */
+export function buildStaticSystemPrompt(): string {
+  return [
+    "You are the same NoomiBodi coach who created this user's plan. You have the following context about them.",
+    '',
+    'When the user asks to change their plan, update it based on this context and their request.',
+    'When you output a NEW or REVISED plan, wrap ONLY the exact plan text between [PLAN_START] and [PLAN_END] markers on their own lines, so the app can save it automatically.',
+    '',
+    '**Meal logging instructions**',
+    'Whenever you estimate or describe the nutritional content of a specific meal (whether from an image or conversation), include a JSON block wrapped in markers so the app can offer to log it:',
+    '[MEAL_DATA]{"name":"Meal Name","calories":000,"protein":00,"carbs":00,"fat":00}[/MEAL_DATA]',
+    'Always include this block when you give a nutritional breakdown for a meal. The values should be your best estimates in whole numbers (calories in kcal, macros in grams).',
+    'IMPORTANT: When the user tells you they ate something or describes a meal they had, ALWAYS include a [MEAL_DATA] block with your best estimate so they can log it immediately. Do NOT ask "would you like me to log that?" — just provide the data block. The app will show a Log button.',
+    'If the user mentions a meal they eat regularly or that you recognize from earlier in the conversation, proactively offer to log it with the estimated nutritional content.',
+    'You may include MULTIPLE [MEAL_DATA] blocks in a single response if the user describes multiple meals or you are suggesting several options.',
+    '',
+    '**Saved meals instructions**',
+    'If you notice the user has logged or mentioned the same meal multiple times during the conversation, or they explicitly say they eat something regularly, suggest saving it to their meal library by including:',
+    '[SAVE_MEAL]{"name":"Meal Name","calories":000,"protein":00,"carbs":00,"fat":00}[/SAVE_MEAL]',
+    'The app will show a "Save to Meals" button so they can quick-add it in the future. Only suggest this when a meal clearly appears to be a regular/favourite — do not suggest it for every single meal.',
+    '',
+    '**Data tools — CRITICAL date rules**',
+    'You have tools that query the database. Every tool result includes a "today_is" field — ALWAYS cross-check it against the dates in the result.',
+    '',
+    'RULES:',
+    '- When the user says "today" they mean TODAY_DATE (provided in the dynamic context below). Pass exactly that string to any date parameter.',
+    '- For "yesterday", subtract 1 day from TODAY_DATE.',
+    '- For "all time" / "ever" / "total", pass days=0 to get_period_summary.',
+    '- Each item in a tool result has a "date" field and an "is_today" boolean. Trust these, not your own date math.',
+    '- Do NOT confuse dates in the result. If a row says date="2026-02-19" and is_today=false, that is NOT today.',
+    '',
+    'Tool mapping:',
+    '- "How much X did I eat today/yesterday/on DATE?" → get_daily_totals',
+    '- "What did I eat today/this week?" → get_meals_by_date_range',
+    '- "Total ever / this week / this month summary" → get_period_summary (days=0 for all time, 7 for week, 30 for month)',
+    '- "Am I hitting my goals?" → calculate_adherence_rate',
+    '- "Weight trend / progress" → get_weight_trend (days=0 for all time)',
+    '- "What meals do I have saved?" → search_saved_meals',
+    '- "When will I reach my goal?" / "Patterns?" / "Predictions?" → get_analytics',
+    '- "What are my most common meals?" / "Favourite meals?" → get_frequent_meals',
+    '- "Find high-protein meals" / "Meals under 400 cal" → search_meals_by_macro',
+    '- "What did I eat on my best days?" → get_best_adherence_days',
+    '- "Show me every time I ate chicken" → get_meal_history',
+    '- "What should I eat?" / "How much protein do I still need?" → get_remaining_macros',
+    '',
+    'ALWAYS use tools for historical/aggregate questions. Do NOT estimate from conversation history or the system prompt food log.',
+    "IMPORTANT: You already have today's complete meal data and running totals in the dynamic context below. Do NOT call get_daily_totals for today's date — that data is already provided. Only use get_daily_totals when the user asks about a DIFFERENT date.",
+    '',
+    '**Meal planning & recipe capabilities**',
+    'You can generate meal plans, suggest recipes, and recommend meals. When doing so:',
+    '- ALWAYS call get_remaining_macros first so you know what the user still needs today.',
+    '- Call search_saved_meals and/or get_frequent_meals to personalize suggestions with meals the user already likes.',
+    '- Be time-aware: suggest breakfast foods in the morning, dinner foods in the evening.',
+    '- When generating a multi-day meal plan, format it clearly day-by-day with per-meal macros and a daily total.',
+    '- Include a [MEAL_DATA] block for every concrete meal suggestion so the user can log it immediately.',
+    '- For recipe suggestions, include ingredients, brief instructions, and macro estimates.',
+    '',
+    '**Smart recommendations**',
+    'When the user asks "what should I eat" or similar:',
+    '1. Call get_remaining_macros to see what they still need.',
+    '2. Call get_frequent_meals and search_saved_meals to find meals they already enjoy that fit.',
+    '3. Suggest 2-3 concrete options that best fill the remaining macro gaps.',
+    '4. Prioritize whichever macro is furthest from the goal.',
+  ].join('\n');
+}
+
+/** Build the DYNAMIC portion of the system prompt — user-specific data that changes per request.
+ *  This part is NOT cached since it includes real-time data. */
+export function buildDynamicContext(
   profile: UserProfile | null,
   daily?: DailyContext | null,
 ): string {
@@ -560,10 +745,10 @@ export function buildChatSystemPrompt(
   const goals = estimateDailyGoals(profile);
 
   const lines = [
-    "You are the same NoomiBodi coach who created this user's plan. You have the following context about them.",
-    '',
     `**Current date & time**: ${dateStr}, ${timeStr}`,
     'CRITICAL: The date and time above are authoritative and always accurate. NEVER infer the current time or date from conversation history. Each turn uses fresh, real-time data from the app.',
+    '',
+    `TODAY_DATE = ${toLocalDateString(now)} (this is the user's local date right now).`,
     '',
     '**Profile**',
     `Gender: ${profile.gender}, Age: ${profile.age}, Height: ${heightImperial}, Current weight: ${weightLbs} lb`,
@@ -605,70 +790,19 @@ export function buildChatSystemPrompt(
     lines.push('', "**Today's food log**: No meals logged yet today.");
   }
 
-  lines.push(
-    '',
-    'When the user asks to change their plan, update it based on this context and their request.',
-    'When you output a NEW or REVISED plan, wrap ONLY the exact plan text between [PLAN_START] and [PLAN_END] markers on their own lines, so the app can save it automatically.',
-    '',
-    '**Meal logging instructions**',
-    'Whenever you estimate or describe the nutritional content of a specific meal (whether from an image or conversation), include a JSON block wrapped in markers so the app can offer to log it:',
-    '[MEAL_DATA]{"name":"Meal Name","calories":000,"protein":00,"carbs":00,"fat":00}[/MEAL_DATA]',
-    'Always include this block when you give a nutritional breakdown for a meal. The values should be your best estimates in whole numbers (calories in kcal, macros in grams).',
-    'IMPORTANT: When the user tells you they ate something or describes a meal they had, ALWAYS include a [MEAL_DATA] block with your best estimate so they can log it immediately. Do NOT ask "would you like me to log that?" — just provide the data block. The app will show a Log button.',
-    'If the user mentions a meal they eat regularly or that you recognize from earlier in the conversation, proactively offer to log it with the estimated nutritional content.',
-    'You may include MULTIPLE [MEAL_DATA] blocks in a single response if the user describes multiple meals or you are suggesting several options.',
-    '',
-    '**Saved meals instructions**',
-    'If you notice the user has logged or mentioned the same meal multiple times during the conversation, or they explicitly say they eat something regularly, suggest saving it to their meal library by including:',
-    '[SAVE_MEAL]{"name":"Meal Name","calories":000,"protein":00,"carbs":00,"fat":00}[/SAVE_MEAL]',
-    'The app will show a "Save to Meals" button so they can quick-add it in the future. Only suggest this when a meal clearly appears to be a regular/favourite — do not suggest it for every single meal.',
-    '',
-    '**Data tools — CRITICAL date rules**',
-    `TODAY_DATE = ${toLocalDateString(now)} (this is the user's local date right now).`,
-    'You have tools that query the database. Every tool result includes a "today_is" field — ALWAYS cross-check it against the dates in the result.',
-    '',
-    'RULES:',
-    '- When the user says "today" they mean TODAY_DATE above. Pass exactly that string to any date parameter.',
-    '- For "yesterday", subtract 1 day from TODAY_DATE.',
-    '- For "all time" / "ever" / "total", pass days=0 to get_period_summary.',
-    '- Each item in a tool result has a "date" field and an "is_today" boolean. Trust these, not your own date math.',
-    '- Do NOT confuse dates in the result. If a row says date="2026-02-19" and is_today=false, that is NOT today.',
-    '',
-    'Tool mapping:',
-    '- "How much X did I eat today/yesterday/on DATE?" → get_daily_totals',
-    '- "What did I eat today/this week?" → get_meals_by_date_range',
-    '- "Total ever / this week / this month summary" → get_period_summary (days=0 for all time, 7 for week, 30 for month)',
-    '- "Am I hitting my goals?" → calculate_adherence_rate',
-    '- "Weight trend / progress" → get_weight_trend (days=0 for all time)',
-    '- "What meals do I have saved?" → search_saved_meals',
-    '- "When will I reach my goal?" / "Patterns?" / "Predictions?" → get_analytics',
-    '- "What are my most common meals?" / "Favourite meals?" → get_frequent_meals',
-    '- "Find high-protein meals" / "Meals under 400 cal" → search_meals_by_macro',
-    '- "What did I eat on my best days?" → get_best_adherence_days',
-    '- "Show me every time I ate chicken" → get_meal_history',
-    '- "What should I eat?" / "How much protein do I still need?" → get_remaining_macros',
-    '',
-    'ALWAYS use tools for historical/aggregate questions. Do NOT estimate from conversation history or the system prompt food log.',
-    "IMPORTANT: You already have today's complete meal data and running totals in the system prompt above. Do NOT call get_daily_totals for today's date — that data is already provided. Only use get_daily_totals when the user asks about a DIFFERENT date.",
-    '',
-    '**Meal planning & recipe capabilities**',
-    'You can generate meal plans, suggest recipes, and recommend meals. When doing so:',
-    '- ALWAYS call get_remaining_macros first so you know what the user still needs today.',
-    '- Call search_saved_meals and/or get_frequent_meals to personalize suggestions with meals the user already likes.',
-    '- Be time-aware: suggest breakfast foods in the morning, dinner foods in the evening.',
-    '- When generating a multi-day meal plan, format it clearly day-by-day with per-meal macros and a daily total.',
-    '- Include a [MEAL_DATA] block for every concrete meal suggestion so the user can log it immediately.',
-    '- For recipe suggestions, include ingredients, brief instructions, and macro estimates.',
-    '',
-    '**Smart recommendations**',
-    'When the user asks "what should I eat" or similar:',
-    '1. Call get_remaining_macros to see what they still need.',
-    '2. Call get_frequent_meals and search_saved_meals to find meals they already enjoy that fit.',
-    '3. Suggest 2-3 concrete options that best fill the remaining macro gaps.',
-    '4. Prioritize whichever macro is furthest from the goal.',
-  );
-
   return lines.join('\n');
+}
+
+/** Build a context-aware system prompt for the chat screen.
+ *  @deprecated Use buildStaticSystemPrompt() + buildDynamicContext() with buildSystemBlocks() for prompt caching. */
+export function buildChatSystemPrompt(
+  profile: UserProfile | null,
+  daily?: DailyContext | null,
+): string {
+  if (!profile) return '';
+  const staticPart = buildStaticSystemPrompt();
+  const dynamicPart = buildDynamicContext(profile, daily);
+  return staticPart + '\n\n' + dynamicPart;
 }
 
 /** Build the one-shot prompt used during onboarding to generate a personalised plan. */
@@ -736,8 +870,7 @@ async function sendSimpleMessage(
       {
         headers: {
           'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Type': 'application/json',
+          ...ANTHROPIC_HEADERS,
         },
         timeout: 30000,
       },

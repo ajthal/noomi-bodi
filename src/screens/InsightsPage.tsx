@@ -75,6 +75,12 @@ export default function InsightsPage(): React.JSX.Element {
 
   const { fetchIfStale, forceFetch } = useStaleFetch(load, 60_000);
 
+  // Fetch on mount so data is ready before user navigates here
+  useEffect(() => {
+    fetchIfStale();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!isFocused) return;
     fetchIfStale();
