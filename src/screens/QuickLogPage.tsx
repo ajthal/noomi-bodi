@@ -149,6 +149,12 @@ export default function QuickLogPage({
 
   const { fetchIfStale, forceFetch, markStale } = useStaleFetch(refresh, 15_000);
 
+  // Fetch on mount so data is ready before user navigates here (lazy: false mounts all tabs)
+  useEffect(() => {
+    fetchIfStale();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (isFocused) fetchIfStale();
   }, [isFocused, fetchIfStale]);

@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ImpersonationProvider, useImpersonation } from './src/contexts/ImpersonationContext';
+import { ChatProvider } from './src/contexts/ChatContext';
 import ImpersonationBanner from './src/components/ImpersonationBanner';
 import { OfflineBanner } from './src/components/OfflineBanner';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -389,7 +390,9 @@ function App() {
         <ThemeProvider>
           <AuthProvider>
             <ImpersonationProvider>
-              <AppInner />
+              <ChatProvider>
+                <AppInner />
+              </ChatProvider>
             </ImpersonationProvider>
           </AuthProvider>
         </ThemeProvider>

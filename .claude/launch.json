@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Metro Dev Server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["react-native", "start", "--reset-cache"],
+      "port": 8081
+    },
+    {
+      "name": "Metro Dev Server (Production)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["react-native", "start", "--reset-cache"],
+      "port": 8081,
+      "env": {
+        "APP_ENV": "production"
+      }
+    }
+  ]
+}
