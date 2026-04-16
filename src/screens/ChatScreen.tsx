@@ -196,6 +196,9 @@ export default function ChatScreen({
     conversationSummary,
     persistSummary,
     refreshProfileAndKey,
+    justClearedBanner,
+    dismissClearedBanner,
+    evaluateAutoClear,
   } = useChatContext();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -315,16 +318,24 @@ export default function ChatScreen({
 
     if (image) imageBase64Cache.set(image.uri, image.base64);
 
+    setInput('');
+    setIsLoading(true);
+
+    // Pre-send: if thresholds were crossed by the previous turn, distill memory
+    // and wipe chat state first. This runs BEFORE we append the new message so
+    // the user's new send lands in a clean chat rather than clobbering their
+    // last visible exchange.
+    const wasJustCleared = await evaluateAutoClear().catch(() => false);
+    const baseMessages: Message[] = wasJustCleared ? [] : messages;
+
     const userMessage: Message = {
       text: promptText,
       role: 'user',
       timestamp: Date.now(),
       ...(image ? { imageUri: image.uri } : {}),
     };
-    const newMessages = [...messages, userMessage];
+    const newMessages = [...baseMessages, userMessage];
     setMessages(newMessages);
-    setInput('');
-    setIsLoading(true);
 
     try {
       const [todayMeals, todayTotals] = await Promise.all([
@@ -626,6 +637,33 @@ export default function ChatScreen({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator
         >
+          {justClearedBanner && (
+            <TouchableOpacity
+              onPress={dismissClearedBanner}
+              activeOpacity={0.8}
+              style={{
+                marginBottom: 12,
+                padding: 12,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surface,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <Ionicons name="sparkles-outline" size={18} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 13, fontWeight: '600' }}>
+                  Noomi cleared the chat to stay fast
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                  Your profile and what I remember about you are preserved. Tap to dismiss.
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
           {messages.length === 0 && (
             <View style={styles.emptyState}>
               <Image source={noomiAvatar} style={{ width: 80, height: 80, borderRadius: 40 }} />

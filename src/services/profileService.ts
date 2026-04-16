@@ -206,6 +206,8 @@ export async function updateProfileFields(
     profile_picture_url: string | null;
     bio: string | null;
     is_private: boolean;
+    ai_memory: string;
+    ai_memory_updated_at: string | null;
   }>,
 ): Promise<void> {
   const userId = await getUserId();
@@ -222,4 +224,46 @@ export async function updateProfileFields(
 export function suggestUsernameFromEmail(email: string): string {
   const local = email.split('@')[0] || '';
   return local.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 20).toLowerCase();
+}
+
+// ── AI memory (persistent, distilled user context) ───────────────────
+
+/**
+ * Load the user's persistent AI memory from Supabase.
+ * Returns an empty string if nothing has been stored yet or on error.
+ * Memory is kept on `profiles.ai_memory` and protected by the same RLS as the
+ * rest of the profile row — never exposed through `public_profiles`.
+ */
+export async function getAiMemory(): Promise<string> {
+  const userId = await getUserId();
+  if (!userId) return '';
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('ai_memory')
+      .eq('id', userId)
+      .single();
+    if (error || !data) return '';
+    return (data.ai_memory as string | null) ?? '';
+  } catch (err) {
+    console.error('Error loading AI memory:', err);
+    return '';
+  }
+}
+
+/**
+ * Persist an updated AI memory string. The caller is responsible for keeping
+ * it under ~1500 chars — the distillation prompt enforces this.
+ */
+export async function updateAiMemory(memory: string): Promise<void> {
+  await updateProfileFields({
+    ai_memory: memory,
+    ai_memory_updated_at: new Date().toISOString(),
+  });
+}
+
+/** Clear the AI memory (used by "Forget everything"). */
+export async function clearAiMemory(): Promise<void> {
+  await updateAiMemory('');
 }
