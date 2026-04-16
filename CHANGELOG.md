@@ -2,6 +2,18 @@
 
 All notable changes to NoomiBodi will be documented in this file.
 
+## [1.0.5.1] - 2026-04-16
+
+### Bug Fixes
+- **Chat meal logging rate limit errors**: Fixed a cascade where logging a meal would trigger unnecessary tool_use rounds, exhaust the 20k token budget, and produce a misleading "Claude rate limit reached" error while admin logs showed the call as successful.
+  - `meal_log` intent now sends **no tools** (was 1). The dynamic system context already includes daily targets, running totals, and the full food log — Claude can generate `[MEAL_DATA]` blocks directly without any tool calls.
+  - The inter-round token budget guard now **always returns** when exceeded, with a graceful fallback message if no text was produced. Previously it would fall through when the response contained only tool_use blocks, triggering another API call.
+  - The `tools` key is now omitted from the API request body when `selectedTools` is empty.
+
+### Internal
+- Added `.claude/worktrees/` and `.claude/settings.local.json` to `.gitignore`.
+- Version bumped to 1.0.5.1 (hotfix).
+
 ## [1.0.5] - 2026-04-14
 
 ### Performance

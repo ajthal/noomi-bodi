@@ -286,8 +286,8 @@ const SUGGESTION_TOOL_NAMES = new Set([
 export function getToolsForIntent(intent: ToolIntent): ToolDefinition[] {
   switch (intent) {
     case 'meal_log':
-      // Meal logging rarely needs tools — just core
-      return TOOL_DEFINITIONS.filter(t => CORE_TOOL_NAMES.has(t.name));
+      // Claude already has daily context in the system prompt — no tools needed for meal logging
+      return [];
     case 'data_query':
       // Full data toolset
       return TOOL_DEFINITIONS.filter(t => DATA_QUERY_TOOL_NAMES.has(t.name) || CORE_TOOL_NAMES.has(t.name));
