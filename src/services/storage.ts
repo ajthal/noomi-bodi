@@ -6,8 +6,21 @@ import { cacheProfile, getCachedProfile } from './offlineStore';
 
 const MESSAGES_KEY = '@noomibodi_messages';
 const CONVERSATION_SUMMARY_KEY = '@noomibodi_conversation_summary';
+const LAST_CLEARED_AT_KEY = '@noomibodi_chat_last_cleared_at';
 const API_KEY_KEY = '@noomibodi_api_key';
 const LEGACY_API_KEY = 'claude_api_key';
+
+// ── Chat state caps ───────────────────────────────────────────────────
+
+/** Hard cap on conversationSummary length, enforced where it's written.
+ *  Past this threshold the chat context provider runs extract-and-clear. */
+export const SUMMARY_MAX_CHARS = 2000;
+
+/** Hard cap on message count before auto-clear fires on the next send/mount. */
+export const MESSAGE_COUNT_AUTOCLEAR_THRESHOLD = 40;
+
+/** Time-based auto-clear interval (ms). 7 days. */
+export const AUTOCLEAR_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // ── Domain types ──────────────────────────────────────────────────────
 
@@ -74,6 +87,10 @@ export interface UserProfile {
   profilePictureUrl?: string | null;
   bio?: string | null;
   isPrivate?: boolean;
+  /** Persistent, distilled facts Noomi should remember about the user
+   *  (goals, restrictions, patterns). Injected into every chat system prompt.
+   *  Updated via `extractAndStoreMemory` before auto-clearing chat history. */
+  aiMemory?: string;
 }
 
 // ── Goal estimation (Mifflin-St Jeor) ─────────────────────────────────
@@ -217,6 +234,40 @@ export async function clearConversationSummary(): Promise<void> {
     await AsyncStorage.removeItem(CONVERSATION_SUMMARY_KEY);
   } catch (error) {
     console.error('Error clearing conversation summary:', error);
+  }
+}
+
+// ── Auto-clear bookkeeping ────────────────────────────────────────────
+
+export async function getLastClearedAt(): Promise<number | null> {
+  try {
+    const v = await AsyncStorage.getItem(LAST_CLEARED_AT_KEY);
+    if (!v) return null;
+    const parsed = parseInt(v, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch (error) {
+    console.error('Error loading last-cleared timestamp:', error);
+    return null;
+  }
+}
+
+export async function setLastClearedAt(ts: number): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LAST_CLEARED_AT_KEY, String(ts));
+  } catch (error) {
+    console.error('Error saving last-cleared timestamp:', error);
+  }
+}
+
+/** Wipe chat messages + conversation summary and stamp the clear timestamp.
+ *  The persistent `profiles.ai_memory` is left untouched — call it separately
+ *  via `clearAiMemory()` for the full "forget everything" flow. */
+export async function clearChatState(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([MESSAGES_KEY, CONVERSATION_SUMMARY_KEY]);
+    await setLastClearedAt(Date.now());
+  } catch (error) {
+    console.error('Error clearing chat state:', error);
   }
 }
 
@@ -396,6 +447,7 @@ export async function loadUserProfile(): Promise<UserProfile | null> {
       profilePictureUrl: profileData.profile_picture_url || null,
       bio: profileData.bio || null,
       isPrivate: profileData.is_private ?? false,
+      aiMemory: (profileData.ai_memory as string | null) ?? '',
     };
 
     await cacheProfile(profile);

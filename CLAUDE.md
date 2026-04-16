@@ -4,7 +4,7 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 
 ## Quick Reference
 
-- **Version**: 1.0.6
+- **Version**: 1.0.7
 - **Node**: >= 22.11.0
 - **Run dev**: `npm start` (or `npm run start:prod` for production env)
 - **Run iOS**: `npx react-native run-ios` (or `npm run ios:prod`)
@@ -91,7 +91,28 @@ Claude response markers parsed by the app:
 
 `ThemeProvider` → `AuthProvider` → `ImpersonationProvider` → `ChatProvider` → `AppInner`
 
-- **ChatContext** (`src/contexts/ChatContext.tsx`): Holds chat messages, apiKey, profile, conversationSummary. Loads once on mount, persists across navigation. ChatScreen reads from this context — it does NOT remount or re-fetch on every navigation.
+- **ChatContext** (`src/contexts/ChatContext.tsx`): Holds chat messages, apiKey, profile, conversationSummary. Loads once on mount, persists across navigation. ChatScreen reads from this context — it does NOT remount or re-fetch on every navigation. Also owns auto-clear logic (`evaluateAutoClear`, `manualClearChat`, `forgetEverything`) and the `justClearedBanner` flag.
+
+### Chat State Architecture (v1.0.7+)
+
+Three layers, each with distinct lifetime and size budget. Keeps long-lived installs from accumulating unbounded context (the v1.0.6 cascade bug):
+
+| Layer | Storage | Lifetime | Cap | Purpose |
+|-------|---------|----------|-----|---------|
+| **User memory** | Supabase `profiles.ai_memory` | Permanent — survives auto-clears | 1500 chars | Distilled durable facts (goals, allergies, patterns). Injected into every system prompt. |
+| **Conversation summary** | AsyncStorage `@noomibodi_conversation_summary` | Cleared on auto-clear | `SUMMARY_MAX_CHARS = 2000` | Rolling recap of messages dropped by context windowing. |
+| **Messages** | AsyncStorage `@noomibodi_messages` | Cleared on auto-clear | 100 messages (existing `MAX_CHAT_HISTORY`) | Verbatim recent exchanges shown in chat UI. |
+
+**Auto-clear trigger (hybrid)** — evaluated on mount and **before** each send in `ChatContext` (before-send, not after-send — otherwise the send that crosses the threshold wipes its own response before the user can read it):
+- `messages.length > 40` (`MESSAGE_COUNT_AUTOCLEAR_THRESHOLD`), OR
+- `conversationSummary.length > 2000`, OR
+- `Date.now() - lastClearedAt > 7 days` (`AUTOCLEAR_INTERVAL_MS`), when content exists.
+
+On trigger: call `extractAndStoreMemory()` (distills chat → `profiles.ai_memory`), then `clearChatState()` (wipes messages + summary, stamps `@noomibodi_chat_last_cleared_at`), then show the post-clear banner.
+
+**Silent-failure fix**: `summarizeDroppedMessages()` used to swallow rate-limit errors via a bare `catch`, which let stuck huge summaries persist silently. It now logs every failure to `ai_usage_logs` with `success=false` and a categorized error (`rate_limited_during_summarize` etc.).
+
+**Settings → Chat & Memory** exposes: (a) read-only view of `profile.aiMemory`, (b) "Clear chat history" (keeps memory), (c) "Forget everything" (wipes both).
 
 ### Data Loading Pattern
 
