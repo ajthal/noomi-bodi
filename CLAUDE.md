@@ -4,7 +4,7 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 
 ## Quick Reference
 
-- **Version**: 1.0.5
+- **Version**: 1.0.5.1
 - **Node**: >= 22.11.0
 - **Run dev**: `npm start` (or `npm run start:prod` for production env)
 - **Run iOS**: `npx react-native run-ios` (or `npm run ios:prod`)
@@ -50,10 +50,12 @@ Not all 13 tools are sent with every request. `classifyIntent(message, hasImage)
 
 | Intent | Trigger | Tools Sent |
 |--------|---------|------------|
-| `meal_log` | Image attached, or "I had/ate..." patterns | 1 (get_remaining_macros) |
+| `meal_log` | Image attached, or "I had/ate..." patterns | 0 (none — `[MEAL_DATA]` is generated from system prompt context) |
 | `meal_suggestion` | "what should I eat", "suggest", "recommend" | 3 (remaining_macros, frequent_meals, saved_meals) |
 | `data_query` | "how much", "this week", "progress", etc. | 11 (all data tools) |
 | `general` | Default / unclear intent | 13 (all tools) |
+
+When `selectedTools` is empty the `tools` key is omitted from the API request body entirely (see `claude.ts:353-355`).
 
 `getToolsForIntent(intent)` in `claudeTools.ts` returns the filtered tool array.
 
@@ -112,7 +114,7 @@ See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
 - `supabase/.temp/`
 - `src/utils/testAccounts.ts`, `docs/seed_test_accounts.sql`
 
-## Open Feedback Items (as of v1.0.5)
+## Open Feedback Items (as of v1.0.5.1)
 
 Tracked in the `feedback` table. Key unresolved items:
 - **Chat photo display** (#5): Upload works but image shows empty space in chat bubble
