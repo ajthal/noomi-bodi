@@ -13,6 +13,8 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import DeviceInfo from 'react-native-device-info';
+import { version as jsBundleVersion } from '../../package.json';
 import { useAuth } from '../contexts/AuthContext';
 import {
   loadUserProfile,
@@ -273,6 +275,18 @@ export default function SettingsPage(): React.JSX.Element {
       </View>
 
         {status ? <Text style={[s.statusText, { color: colors.accent }]}>{status}</Text> : null}
+
+        {/* Version footer */}
+        <View style={s.versionFooter}>
+          <Text style={[s.versionText, { color: colors.textSecondary }]}>
+            Version {DeviceInfo.getVersion()} ({DeviceInfo.getBuildNumber()})
+          </Text>
+          {jsBundleVersion !== DeviceInfo.getVersion() && (
+            <Text style={[s.versionMismatchText, { color: colors.textTertiary }]}>
+              JS bundle: {jsBundleVersion}
+            </Text>
+          )}
+        </View>
       </ScrollView>
     </View>
   );
@@ -379,5 +393,17 @@ const s = StyleSheet.create({
   statusText: {
     marginTop: 8,
     fontSize: 14,
+  },
+  versionFooter: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  versionText: {
+    fontSize: 12,
+  },
+  versionMismatchText: {
+    fontSize: 11,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
 });
