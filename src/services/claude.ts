@@ -349,8 +349,10 @@ export async function sendMessageToClaude(
         model: CLAUDE_MODEL,
         max_tokens: hasImage ? 4096 : 2048,
         messages: apiMessages,
-        tools: selectedTools,
       };
+      if (selectedTools.length > 0) {
+        body.tools = selectedTools;
+      }
 
       // Use block-format system prompt for caching when available
       if (systemBlocks && systemBlocks.length > 0) {
@@ -396,19 +398,19 @@ export async function sendMessageToClaude(
         const textParts = (content as ContentBlock[])
           .filter((b): b is TextBlock => b.type === 'text')
           .map(b => b.text);
-        if (textParts.length > 0) {
-          logAiUsage({
-            model: CLAUDE_MODEL,
-            tokensInput: totalInputTokens,
-            tokensOutput: totalOutputTokens,
-            cacheReadTokens: totalCacheReadTokens,
-            cacheCreationTokens: totalCacheCreationTokens,
-            latencyMs: Date.now() - startTime,
-            success: true,
-            toolsUsed: allToolsUsed,
-          });
-          return textParts.join('\n');
-        }
+        const result = textParts.join('\n') || "I wasn't able to complete that request within the token budget. Please try again with a shorter message.";
+
+        logAiUsage({
+          model: CLAUDE_MODEL,
+          tokensInput: totalInputTokens,
+          tokensOutput: totalOutputTokens,
+          cacheReadTokens: totalCacheReadTokens,
+          cacheCreationTokens: totalCacheCreationTokens,
+          latencyMs: Date.now() - startTime,
+          success: true,
+          toolsUsed: allToolsUsed,
+        });
+        return result;
       }
 
       const toolUseBlocks = (content as ContentBlock[]).filter(
