@@ -2,7 +2,7 @@
 
 All notable changes to NoomiBodi will be documented in this file.
 
-## [1.0.5.1] - 2026-04-16
+## [1.0.6] - 2026-04-16
 
 ### Bug Fixes
 - **Chat meal logging rate limit errors**: Fixed a cascade where logging a meal would trigger unnecessary tool_use rounds, exhaust the 20k token budget, and produce a misleading "Claude rate limit reached" error while admin logs showed the call as successful.
@@ -11,8 +11,8 @@ All notable changes to NoomiBodi will be documented in this file.
   - The `tools` key is now omitted from the API request body when `selectedTools` is empty.
 
 ### Internal
+- Adopted standard Semantic Versioning (`MAJOR.MINOR.PATCH`). Previous `1.0.5.1` was renamed to `1.0.6` to match iOS/Android native version format and be user-visible in TestFlight/App Store.
 - Added `.claude/worktrees/` and `.claude/settings.local.json` to `.gitignore`.
-- Version bumped to 1.0.5.1 (hotfix).
 
 ## [1.0.5] - 2026-04-14
 
