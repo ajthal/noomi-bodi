@@ -4,7 +4,7 @@ AI-powered nutrition tracking app built with React Native (TypeScript), Supabase
 
 ## Quick Reference
 
-- **Version**: 1.0.5.1
+- **Version**: 1.0.6
 - **Node**: >= 22.11.0
 - **Run dev**: `npm start` (or `npm run start:prod` for production env)
 - **Run iOS**: `npx react-native run-ios` (or `npm run ios:prod`)
@@ -114,7 +114,7 @@ See `docs/database_schema.md` for full schema, `docs/roles.md` for role details.
 - `supabase/.temp/`
 - `src/utils/testAccounts.ts`, `docs/seed_test_accounts.sql`
 
-## Open Feedback Items (as of v1.0.5.1)
+## Open Feedback Items (as of v1.0.6)
 
 Tracked in the `feedback` table. Key unresolved items:
 - **Chat photo display** (#5): Upload works but image shows empty space in chat bubble
