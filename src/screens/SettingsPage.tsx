@@ -25,6 +25,7 @@ import {
 import { updateProfileFields } from '../services/profileService';
 import { OnboardingContext } from '../contexts/OnboardingContext';
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
+import { useChatContext } from '../contexts/ChatContext';
 import PrivacyToggle from '../components/PrivacyToggle';
 import { getUserFriendlyError } from '../utils/errorMessages';
 
@@ -32,10 +33,12 @@ export default function SettingsPage(): React.JSX.Element {
   const { user, signOut } = useAuth();
   const { mode, colors, setMode } = useTheme();
   const { onResetProfile } = useContext(OnboardingContext);
+  const { profile: chatProfile, manualClearChat, forgetEverything } = useChatContext();
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savedApiKey, setSavedApiKey] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [clearingChat, setClearingChat] = useState(false);
 
   useEffect(() => {
     getApiKey().then(key => {
@@ -153,6 +156,56 @@ export default function SettingsPage(): React.JSX.Element {
     );
   };
 
+  const handleClearChat = () => {
+    Alert.alert(
+      'Clear chat history',
+      "This will wipe your recent chat and summary on this device. Noomi will keep remembering the durable facts about you (goals, allergies, preferences). Continue?",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            setClearingChat(true);
+            try {
+              await manualClearChat();
+              setStatus('Chat history cleared. Your memory is preserved.');
+            } catch (error) {
+              setStatus(getUserFriendlyError(error));
+            } finally {
+              setClearingChat(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleForgetEverything = () => {
+    Alert.alert(
+      'Forget everything',
+      "This erases your chat history AND everything Noomi remembers about you (preferences, patterns, goals mentioned in chat). Your profile, plan, and meal logs are not affected. Continue?",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Forget',
+          style: 'destructive',
+          onPress: async () => {
+            setClearingChat(true);
+            try {
+              await forgetEverything();
+              setStatus('Chat and memory cleared.');
+            } catch (error) {
+              setStatus(getUserFriendlyError(error));
+            } finally {
+              setClearingChat(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const navigation = useNavigation<any>();
   const isStandaloneScreen = useRoute().name === 'SettingsScreen';
 
@@ -243,6 +296,40 @@ export default function SettingsPage(): React.JSX.Element {
             </Pressable>
           ))}
         </View>
+      </View>
+
+      {/* Chat & Memory */}
+      <View style={s.section}>
+        <Text style={[s.sectionTitle, { color: colors.text }]}>Chat & Memory</Text>
+        <View style={[s.memoryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[s.memoryCardTitle, { color: colors.text }]}>What Noomi remembers about you</Text>
+          <Text style={[s.memoryCardBody, { color: colors.textSecondary }]}>
+            {chatProfile?.aiMemory && chatProfile.aiMemory.trim()
+              ? chatProfile.aiMemory.trim()
+              : "Noomi hasn't built a memory yet — keep chatting and durable preferences (goals, allergies, routines) will be saved here."}
+          </Text>
+        </View>
+        <View style={s.memoryButtonRow}>
+          <View style={s.memoryButtonWrapper}>
+            <Button
+              title={clearingChat ? 'Working...' : 'Clear chat history'}
+              onPress={handleClearChat}
+              disabled={clearingChat}
+              color="#555"
+            />
+          </View>
+          <View style={s.memoryButtonWrapper}>
+            <Button
+              title="Forget everything"
+              onPress={handleForgetEverything}
+              disabled={clearingChat}
+              color="#b00020"
+            />
+          </View>
+        </View>
+        <Text style={[s.memoryHint, { color: colors.textSecondary }]}>
+          Clearing chat keeps Noomi's memory. "Forget everything" wipes both. Profile and meal logs are never touched here.
+        </Text>
       </View>
 
       {/* Support */}
@@ -374,6 +461,33 @@ const s = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
+  },
+  memoryCard: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  memoryCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  memoryCardBody: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  memoryButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  memoryButtonWrapper: {
+    flex: 1,
+  },
+  memoryHint: {
+    marginTop: 8,
+    fontSize: 12,
   },
   feedbackRowTitle: {
     fontSize: 15,

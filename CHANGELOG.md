@@ -2,6 +2,24 @@
 
 All notable changes to NoomiBodi will be documented in this file.
 
+## [1.0.7] - 2026-04-16
+
+### Bug Fixes
+- **Chat state bloat (rate-limit cascade on long-lived installs)**: v1.0.6 fixed the meal-log tool-cascade on fresh simulators, but installs that had been accumulating chat state since v1.0.4 still sent 24–27k tokens per request and hit rate limits. Root cause was a combination of unbounded conversation-summary growth and a silent catch in `summarizeDroppedMessages` that hid rate-limit failures, letting stale huge summaries stick around indefinitely.
+
+### Added
+- **Persistent AI memory layer (`profiles.ai_memory`)**: Noomi now distills durable facts (goals, allergies, preferred cuisines, patterns) into a 1500-char memory that survives chat clears. Injected into every system prompt as "What Noomi remembers about you."
+- **Automatic chat clearing**: Hybrid trigger — fires when any of: > 40 messages, > 2000-char summary, or > 7 days since last clear. Before clearing, a dedicated Claude call distills the chat into persistent memory so personalization is preserved.
+- **Settings → Chat & Memory section**: Read-only view of what Noomi remembers. Two buttons: "Clear chat history" (keeps memory) and "Forget everything" (wipes both).
+- **Post-clear banner in chat**: One-tap-to-dismiss notice after an auto-clear, explaining what happened and reassuring the user their profile + memory are intact.
+- **Supabase migration**: `profiles.ai_memory TEXT NOT NULL DEFAULT ''` + `ai_memory_updated_at TIMESTAMPTZ`. Protected by existing `auth.uid() = id` RLS; never exposed via `public_profiles`.
+
+### Internal
+- **Silent-catch fix in `summarizeDroppedMessages`**: Failures now log via `logAiUsage` with `success=false` and a categorized `errorMessage` (e.g. `rate_limited_during_summarize`). Without this, stuck-summary regressions couldn't be diagnosed from admin logs.
+- **Hard cap on conversation summary**: `SUMMARY_MAX_CHARS = 2000` enforced on every write. Anything over gets trimmed to the most recent half before persistence.
+- New `extractAndStoreMemory()` in `services/claude.ts` — single Claude call, max 500 output tokens, prompt-cached static system, routed through `withRetry`. Writes via `profileService.updateAiMemory()`.
+- New `ChatContext.evaluateAutoClear()` runs on app mount and after every send. Memory extraction runs in the background so the UI isn't blocked.
+
 ## [1.0.6] - 2026-04-16
 
 ### Bug Fixes

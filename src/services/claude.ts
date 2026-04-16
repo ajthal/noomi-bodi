@@ -1,10 +1,15 @@
 import axios from 'axios';
 import { withRetry } from '../utils/retry';
-import { MealData, UserProfile, estimateDailyGoals } from './storage';
+import { MealData, UserProfile, estimateDailyGoals, SUMMARY_MAX_CHARS } from './storage';
 import { cmToFeetInchesStr, kgToLbs } from '../utils/units';
 import { TOOL_DEFINITIONS, getToolsForIntent, type ToolDefinition, executeTool } from './claudeTools';
 import { supabase } from './supabase';
+import { updateAiMemory } from './profileService';
 import type { MealEntry, DailyMacroTotals } from './mealLog';
+
+/** Soft cap on persistent memory length. The distillation prompt asks Claude
+ *  to stay under this; we also hard-trim on write as a safety net. */
+export const AI_MEMORY_MAX_CHARS = 1500;
 
 // ── Anthropic Messages API types ──────────────────────────────────────
 
@@ -183,12 +188,20 @@ export function windowMessages(
 /**
  * Ask Claude to produce a concise summary of dropped messages.
  * The summary is injected into the system prompt so context isn't fully lost.
+ *
+ * Any failure (including 429 rate limits) is logged via `logAiUsage` so future
+ * regressions are observable — previously a silent catch hid these cases, which
+ * allowed the summary to get stuck stale-and-huge on real-world installs.
+ *
+ * The returned string is hard-capped at `SUMMARY_MAX_CHARS`; the ChatContext
+ * auto-clear flow uses the cap as a trigger threshold.
  */
 export async function summarizeDroppedMessages(
   droppedMessages: ChatMessage[],
   existingSummary: string | null,
   apiKey: string,
 ): Promise<string> {
+  const startTime = Date.now();
   const transcript = droppedMessages
     .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 500)}`)
     .join('\n');
@@ -214,10 +227,159 @@ export async function summarizeDroppedMessages(
         timeout: 30000,
       },
     );
+    const { usage } = response.data;
     const block = response.data.content?.[0];
-    return block?.type === 'text' ? block.text : existingSummary ?? '';
-  } catch {
+    let result = block?.type === 'text' ? block.text : existingSummary ?? '';
+    if (result.length > SUMMARY_MAX_CHARS) {
+      // Keep the most recent half — the distillation step will fold the rest into ai_memory.
+      result = result.slice(-SUMMARY_MAX_CHARS);
+    }
+    logAiUsage({
+      model: CLAUDE_MODEL,
+      tokensInput: usage?.input_tokens ?? 0,
+      tokensOutput: usage?.output_tokens ?? 0,
+      cacheReadTokens: usage?.cache_read_input_tokens ?? 0,
+      cacheCreationTokens: usage?.cache_creation_input_tokens ?? 0,
+      latencyMs: Date.now() - startTime,
+      success: true,
+      toolsUsed: ['summarize'],
+    });
+    return result;
+  } catch (error: any) {
+    console.error('[AI] Summarization failed, keeping prior summary', error?.message ?? error);
+    const apiError = error?.response?.data;
+    const apiErrorDetail = apiError?.error?.message || apiError?.error?.type;
+    const errorMsg = error?.response?.status === 429
+      ? 'rate_limited_during_summarize'
+      : (apiErrorDetail
+          ? `${error?.message || 'API error'} — ${apiErrorDetail}`
+          : (error?.message || 'unknown'));
+    logAiUsage({
+      model: CLAUDE_MODEL,
+      tokensInput: 0,
+      tokensOutput: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      latencyMs: Date.now() - startTime,
+      success: false,
+      errorMessage: errorMsg,
+      toolsUsed: ['summarize'],
+    });
     return existingSummary ?? '';
+  }
+}
+
+/**
+ * Distill persistent facts about the user from the current chat context and
+ * merge them into the user's long-lived `ai_memory`. Called by ChatContext
+ * just before auto-clearing chat history, so personalization survives clears.
+ *
+ * Returns the new memory string (also persisted to Supabase).
+ */
+export async function extractAndStoreMemory(params: {
+  currentMemory: string;
+  summary: string | null;
+  recentMessages: ChatMessage[];
+  apiKey: string;
+}): Promise<string> {
+  const { currentMemory, summary, recentMessages, apiKey } = params;
+  const startTime = Date.now();
+
+  const transcript = recentMessages
+    .slice(-20)
+    .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 400)}`)
+    .join('\n');
+
+  const userContent = [
+    'Existing memory about this user (may be empty):',
+    '---',
+    currentMemory || '(none yet)',
+    '---',
+    '',
+    'Recent conversation summary (may be empty):',
+    '---',
+    summary || '(none)',
+    '---',
+    '',
+    'Recent verbatim messages (last 20):',
+    '---',
+    transcript || '(none)',
+    '---',
+    '',
+    `Produce an UPDATED memory string under ${AI_MEMORY_MAX_CHARS} characters.`,
+    'Rules:',
+    '1. Preserve hard constraints VERBATIM (allergies, intolerances, medical conditions, explicit goal macros).',
+    '2. Merge — do NOT duplicate facts that already appear in existing memory.',
+    '3. Drop day-to-day chatter (what they ate Tuesday, one-off questions). Keep durable traits: goals, preferred cuisines, disliked foods, training schedule, work schedule, meal-prep habits, family context, nicknames they go by, tone preferences.',
+    '4. Use compact bullet points, one fact per line, no preamble.',
+    '5. If nothing new to add, return the existing memory unchanged.',
+    'Return ONLY the memory string — no headers, no markdown code fences, no commentary.',
+  ].join('\n');
+
+  const systemPrompt =
+    "You are a memory distillation assistant for a nutrition coaching app. You turn chat history into a compact, durable profile of the user. Be faithful — never invent facts.";
+
+  try {
+    const response = await withRetry(() =>
+      axios.post(
+        API_URL,
+        {
+          model: CLAUDE_MODEL,
+          max_tokens: 500,
+          messages: [{ role: 'user', content: userContent }],
+          system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+        },
+        {
+          headers: {
+            'x-api-key': apiKey,
+            ...ANTHROPIC_HEADERS,
+          },
+          timeout: 30000,
+        },
+      ),
+    );
+
+    const { usage } = response.data;
+    const block = response.data.content?.[0];
+    let memory = block?.type === 'text' ? block.text.trim() : currentMemory;
+    if (memory.length > AI_MEMORY_MAX_CHARS) {
+      memory = memory.slice(0, AI_MEMORY_MAX_CHARS);
+    }
+
+    logAiUsage({
+      model: CLAUDE_MODEL,
+      tokensInput: usage?.input_tokens ?? 0,
+      tokensOutput: usage?.output_tokens ?? 0,
+      cacheReadTokens: usage?.cache_read_input_tokens ?? 0,
+      cacheCreationTokens: usage?.cache_creation_input_tokens ?? 0,
+      latencyMs: Date.now() - startTime,
+      success: true,
+      toolsUsed: ['memory_distill'],
+    });
+
+    await updateAiMemory(memory);
+    return memory;
+  } catch (error: any) {
+    console.error('[AI] Memory extraction failed, keeping prior memory', error?.message ?? error);
+    const apiError = error?.response?.data;
+    const apiErrorDetail = apiError?.error?.message || apiError?.error?.type;
+    const errorMsg = error?.response?.status === 429
+      ? 'rate_limited_during_memory_distill'
+      : (apiErrorDetail
+          ? `${error?.message || 'API error'} — ${apiErrorDetail}`
+          : (error?.message || 'unknown'));
+    logAiUsage({
+      model: CLAUDE_MODEL,
+      tokensInput: 0,
+      tokensOutput: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      latencyMs: Date.now() - startTime,
+      success: false,
+      errorMessage: errorMsg,
+      toolsUsed: ['memory_distill'],
+    });
+    return currentMemory;
   }
 }
 
@@ -760,6 +922,16 @@ export function buildDynamicContext(
     '**Daily Targets (source of truth — NEVER deviate from these numbers)**',
     `Calories: ${goals.calories} cal, Protein: ${goals.protein}g, Carbs: ${goals.carbs}g, Fat: ${goals.fat}g`,
   ];
+
+  if (profile.aiMemory && profile.aiMemory.trim()) {
+    lines.push(
+      '',
+      '**What Noomi remembers about you** (persistent — survives chat clears)',
+      profile.aiMemory.trim(),
+      '',
+      'Treat these as durable facts. Respect allergies/restrictions without needing to be reminded.',
+    );
+  }
 
   if (profile.plan?.trim()) {
     lines.push(
